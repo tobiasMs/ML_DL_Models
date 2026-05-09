@@ -35,11 +35,10 @@ class_names = train_ds.class_names
 
 # 2. Penambahan Augmentasi Sederhana & Arsitektur Base yang Lebih Kuat
 data_augmentation = tf.keras.Sequential([
-    layers.RandomFlip("horizontal_and_vertical"),
-    layers.RandomRotation(0.2),
-    layers.RandomZoom(0.2),
-    layers.RandomContrast(0.3), # Ditingkatkan agar bercak lebih terlihat
-    layers.RandomBrightness(0.2), # Parameter baru: mensimulasikan cahaya matahari
+    layers.RandomFlip("horizontal"),
+    layers.RandomRotation(0.1),
+    layers.RandomZoom(0.1),
+    layers.RandomContrast(0.1),
 ])
 
 base_model = tf.keras.applications.MobileNetV3Large(
@@ -58,14 +57,10 @@ model = models.Sequential([
     layers.GlobalAveragePooling2D(),
     layers.BatchNormalization(),
     
-    # Layer Dense Pertama dengan kapasitas lebih besar
-    layers.Dense(512, activation='relu', kernel_regularizer=l2(0.01)),
+    # Satu layer Dense yang cukup kuat tanpa L2
+    layers.Dense(256, activation='relu'), 
     layers.BatchNormalization(),
-    layers.Dropout(0.5), # Meningkatkan daya tahan model
-    
-    # Layer Dense Kedua untuk memantapkan fitur
-    layers.Dense(128, activation='relu'),
-    layers.Dropout(0.3),
+    layers.Dropout(0.4), 
     
     layers.Dense(10, activation='softmax')
 ])
@@ -88,7 +83,7 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 initial_lr = 1e-3
 
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=initial_lr),
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
     loss='categorical_crossentropy',
     metrics=['accuracy']
 )
@@ -108,8 +103,14 @@ weights = class_weight.compute_class_weight(
 )
 class_weights = dict(enumerate(weights))
 
+early_stop = tf.keras.callbacks.EarlyStopping(
+    monitor='val_loss', 
+    patience=6, 
+    restore_best_weights=True
+)
+
 checkpoint = tf.keras.callbacks.ModelCheckpoint(
-    'best_model_base.keras',
+    'DL/MobileNetV3/Based/best_model_base.keras',
     monitor='val_accuracy',
     save_best_only=True,
     mode='max'
@@ -121,7 +122,7 @@ history = model.fit(
     validation_data=val_ds,
     epochs=50,
     class_weight=class_weights,
-    callbacks=[reduce_lr, checkpoint] # Sekarang tidak akan error lagi
+    callbacks=[reduce_lr, checkpoint, early_stop]
 )
 
 # 4. Visualisasi Graph Loss & Accuracy
@@ -130,22 +131,25 @@ val_acc = history.history['val_accuracy']
 loss = history.history['loss']
 val_loss = history.history['val_loss']
 
+# Gunakan panjang data acc untuk sumbu X
+actual_epochs = range(len(acc))
+
 plt.figure(figsize=(12, 5))
 plt.subplot(1, 2, 1)
-plt.plot(range(epochs), acc, label='Training Accuracy')
-plt.plot(range(epochs), val_acc, label='Validation Accuracy')
+plt.plot(actual_epochs, acc, label='Training Accuracy')
+plt.plot(actual_epochs, val_acc, label='Validation Accuracy')
 plt.title('Training and Validation Accuracy')
 plt.legend()
 
 plt.subplot(1, 2, 2)
-plt.plot(range(epochs), loss, label='Training Loss')
-plt.plot(range(epochs), val_loss, label='Validation Loss')
+plt.plot(actual_epochs, loss, label='Training Loss')
+plt.plot(actual_epochs, val_loss, label='Validation Loss')
 plt.title('Training and Validation Loss')
 plt.legend()
 plt.show()
 
 # Simpan Model Base
-# model.save('mobilenet_v3_base.h5')
+model.save('DL/MobileNetV3/Based/mobilenet_v3_base.h5')
 
 
 from sklearn.metrics import confusion_matrix, classification_report
