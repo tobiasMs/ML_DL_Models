@@ -1,10 +1,11 @@
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
 import tensorflow as tf
 from sklearn.utils import class_weight
 from tensorflow.keras import layers, models
-from tensorflow.keras.regularizers import l2
-import matplotlib.pyplot as plt
-import numpy as np
-import os
+from tensorflow.keras.applications.mobilenet_v3 import preprocess_input
 
 # Konfigurasi Path
 base_dir = r'D:\Projects\Web\smart-farming\ML_DL_Models\TomatoDataset'
@@ -49,21 +50,20 @@ base_model = tf.keras.applications.MobileNetV3Large(
 
 base_model.trainable = False 
 
-model = models.Sequential([
-    layers.Input(shape=(224, 224, 3)),
-    data_augmentation,
-    layers.Rescaling(1./255), 
-    base_model,
-    layers.GlobalAveragePooling2D(),
-    layers.BatchNormalization(),
-    
-    # Satu layer Dense yang cukup kuat tanpa L2
-    layers.Dense(256, activation='relu'), 
-    layers.BatchNormalization(),
-    layers.Dropout(0.4), 
-    
-    layers.Dense(10, activation='softmax')
-])
+num_classes = len(class_names)
+
+inputs = layers.Input(shape=(224, 224, 3))
+x = data_augmentation(inputs)
+x = layers.Lambda(preprocess_input)(x)
+x = base_model(x, training=False)
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.BatchNormalization()(x)
+x = layers.Dense(128, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+x = layers.BatchNormalization()(x)
+x = layers.Dropout(0.5)(x)
+outputs = layers.Dense(num_classes, activation='softmax')(x)
+
+model = models.Model(inputs, outputs)
 
 # Menggunakan Learning Rate yang sedikit lebih rendah agar stabil
 reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
@@ -83,8 +83,8 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 initial_lr = 1e-3
 
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
-    loss='categorical_crossentropy',
+    optimizer=tf.keras.optimizers.Adam(learning_rate=initial_lr),
+    loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
     metrics=['accuracy']
 )
 # 3. Training dengan Epoch lebih banyak
@@ -101,7 +101,7 @@ weights = class_weight.compute_class_weight(
     classes=np.unique(y_train_integers),
     y=y_train_integers
 )
-class_weights = dict(enumerate(weights))
+class_weights = dict(zip(np.unique(y_train_integers), weights))
 
 early_stop = tf.keras.callbacks.EarlyStopping(
     monitor='val_loss', 
@@ -120,16 +120,37 @@ epochs = 50 # Tambah epoch, biarkan EarlyStopping atau LR Scheduler yang bekerja
 history = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=50,
+    epochs=20,
     class_weight=class_weights,
     callbacks=[reduce_lr, checkpoint, early_stop]
 )
 
+# 3b. Fine-tuning bertahap pada lapisan atas backbone agar akurasi naik
+base_model.trainable = True
+for layer in base_model.layers[:-20]:
+    layer.trainable = False
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=5e-6),
+    loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
+    metrics=['accuracy']
+)
+
+fine_tune_history = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    initial_epoch=len(history.history['loss']),
+    epochs=35,
+    class_weight=class_weights,
+    callbacks=[reduce_lr, checkpoint, early_stop]
+)
+
+acc = history.history['accuracy'] + fine_tune_history.history['accuracy']
+val_acc = history.history['val_accuracy'] + fine_tune_history.history['val_accuracy']
+loss = history.history['loss'] + fine_tune_history.history['loss']
+val_loss = history.history['val_loss'] + fine_tune_history.history['val_loss']
+
 # 4. Visualisasi Graph Loss & Accuracy
-acc = history.history['accuracy']
-val_acc = history.history['val_accuracy']
-loss = history.history['loss']
-val_loss = history.history['val_loss']
 
 # Gunakan panjang data acc untuk sumbu X
 actual_epochs = range(len(acc))
