@@ -1,0 +1,12 @@
+# Core Machine Learning Framework
+tensorflow>=2.15.0
+
+# Data Manipulation and Numerical Computing
+numpy>=1.24.0
+
+# Visualization and Plotting
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Machine Learning Utilities (Metrics & Class Weights)
+scikit-learn>=1.3.0
