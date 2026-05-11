@@ -6,9 +6,14 @@ import tensorflow as tf
 from sklearn.utils import class_weight
 from tensorflow.keras import layers, models
 from tensorflow.keras.applications.mobilenet_v3 import preprocess_input
+from tensorflow.keras.applications import MobileNetV3Large
+from pathlib import Path
 
 # Konfigurasi Path
-base_dir = r'D:\Projects\Web\smart-farming\ML_DL_Models\TomatoDataset'
+BASE_DIR = Path(__file__).resolve().parent
+base_dir = BASE_DIR.parent.parent.parent / "TomatoDataset"
+
+# print(base_dir)
 
 # 1. Load Dataset dengan Shuffle yang lebih baik
 train_ds = tf.keras.utils.image_dataset_from_directory(
@@ -16,7 +21,7 @@ train_ds = tf.keras.utils.image_dataset_from_directory(
     validation_split=0.2,
     subset="training",
     seed=123,
-    image_size=(224, 224),
+    image_size=(300, 300),
     batch_size=32,
     label_mode='categorical',
     shuffle=True # Pastikan data diacak agar model tidak belajar urutan folder
@@ -27,7 +32,7 @@ val_ds = tf.keras.utils.image_dataset_from_directory(
     validation_split=0.2,
     subset="validation",
     seed=123,
-    image_size=(224, 224),
+    image_size=(300, 300),
     batch_size=32,
     label_mode='categorical'
 )
@@ -37,13 +42,15 @@ class_names = train_ds.class_names
 # 2. Penambahan Augmentasi Sederhana & Arsitektur Base yang Lebih Kuat
 data_augmentation = tf.keras.Sequential([
     layers.RandomFlip("horizontal"),
-    layers.RandomRotation(0.1),
-    layers.RandomZoom(0.1),
-    layers.RandomContrast(0.1),
+    layers.RandomRotation(0.15),
+    layers.RandomZoom(0.15),
+    layers.RandomContrast(0.15),
+    layers.RandomBrightness(0.2),
+    layers.RandomTranslation(0.1, 0.1),
 ])
 
 base_model = tf.keras.applications.MobileNetV3Large(
-    input_shape=(224, 224, 3),
+    input_shape=(300, 300, 3),
     include_top=False,
     weights='imagenet'
 )
@@ -52,15 +59,18 @@ base_model.trainable = False
 
 num_classes = len(class_names)
 
-inputs = layers.Input(shape=(224, 224, 3))
+inputs = layers.Input(shape=(300, 300, 3))
 x = data_augmentation(inputs)
-x = layers.Lambda(preprocess_input)(x)
 x = base_model(x, training=False)
 x = layers.GlobalAveragePooling2D()(x)
 x = layers.BatchNormalization()(x)
 x = layers.Dense(128, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
 x = layers.BatchNormalization()(x)
-x = layers.Dropout(0.5)(x)
+x = layers.Dropout(0.2)(x)
+
+x = layers.Dense(128, activation='relu')(x)
+x = layers.BatchNormalization()(x)
+x = layers.Dropout(0.3)(x)
 outputs = layers.Dense(num_classes, activation='softmax')(x)
 
 model = models.Model(inputs, outputs)
@@ -120,14 +130,14 @@ epochs = 50 # Tambah epoch, biarkan EarlyStopping atau LR Scheduler yang bekerja
 history = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=20,
+    epochs=30,
     class_weight=class_weights,
     callbacks=[reduce_lr, checkpoint, early_stop]
 )
 
 # 3b. Fine-tuning bertahap pada lapisan atas backbone agar akurasi naik
 base_model.trainable = True
-for layer in base_model.layers[:-20]:
+for layer in base_model.layers[:-80]:
     layer.trainable = False
 
 model.compile(
@@ -167,10 +177,11 @@ plt.plot(actual_epochs, loss, label='Training Loss')
 plt.plot(actual_epochs, val_loss, label='Validation Loss')
 plt.title('Training and Validation Loss')
 plt.legend()
-plt.show()
+plt.show(block=False)
+# plt.pause(1)
 
 # Simpan Model Base
-model.save('DL/MobileNetV3/Based/mobilenet_v3_base.h5')
+model.save('DL/MobileNetV3/Based/mobilenet_v3_base.keras')
 
 
 from sklearn.metrics import confusion_matrix, classification_report
@@ -203,7 +214,8 @@ def plot_evaluation(model, val_ds, class_names):
     plt.xlabel('Prediksi Model')
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    # plt.pause(1)
 
     # 3. Mencetak Classification Report
     print("\nClassification Report:")
