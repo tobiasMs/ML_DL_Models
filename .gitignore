@@ -1,2 +1,4 @@
 /TomatoDataset
 /TomatoBinaryDataset
+/DL/ResNet/Base/best_model_binary_resnet50.keras
+/DL/ResNet/Base/resnet50_binary_final.keras
