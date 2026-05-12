@@ -1,0 +1,201 @@
+JOURNAL-FRIENDLY TRAINING REPORT
+================================
+
+1. Experiment Information
+-------------------------
+Report generated at       : 2026-05-12 13:06:50
+Python version            : 3.13.5
+TensorFlow version        : 2.20.0
+Random seed               : 123
+
+2. Dataset Description
+----------------------
+Dataset name              : Tomato Binary Dataset
+Dataset task              : Binary image classification
+Classes                   : diseased, healthy
+Dataset directory         : E:\ML_DL_Models\TomatoBinaryDataset
+Total images              : 6000
+Total diseased images     : 3000
+Total healthy images      : 3000
+Dataset construction      : Original tomato leaf disease classes were grouped into a single 'diseased' class, while the healthy tomato leaf class was assigned to the 'healthy' class.
+Class balancing strategy  : The dataset was balanced to contain an equal number of images for each class.
+
+3. Train-Validation Split
+-------------------------
+Split method              : Stratified train-validation split
+Validation ratio          : 0.2
+Training images           : 4800
+Training diseased images  : 2400
+Training healthy images   : 2400
+Validation images         : 1200
+Validation diseased images: 600
+Validation healthy images : 600
+
+4. Image Preprocessing
+----------------------
+Input image size          : 300 x 300 pixels
+Batch size                : 32
+Color format              : RGB
+Image resizing            : TensorFlow resize operation
+Preprocessing note        : MobileNetV3 in Keras uses internal preprocessing by default when include_preprocessing=True.
+
+5. Data Augmentation
+--------------------
+Augmentation applied      : Yes
+Augmentation stage        : Training pipeline only
+Augmentation techniques   :
+- Random horizontal flip
+- Random rotation with factor 0.05
+- Random zoom with factor 0.05
+- Random contrast with factor 0.05
+
+6. Model Architecture
+---------------------
+Base model                : MobileNetV3Large
+Pretrained weights        : ImageNet
+Include top               : False
+Pooling layer             : GlobalAveragePooling2D
+Classifier head           : BatchNormalization -> Dense(128, ReLU, L2=1e-4) -> BatchNormalization -> Dropout(0.4) -> Dense(1, Sigmoid)
+Output activation         : Sigmoid
+Classification type       : Binary classification
+Total parameters          : 3123841
+Trainable parameters      : 2291529
+Non-trainable parameters  : 832312
+
+6A. Model Flow Diagram
+----------------------
+The proposed binary classification model follows the architecture flow below:
+
++-----------------------------+
+| Input Image                 |
+| 300 x 300 x 3 RGB           |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Data Augmentation           |
+| - Random horizontal flip    |
+| - Random rotation           |
+| - Random zoom               |
+| - Random contrast           |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| MobileNetV3Large Backbone   |
+| Pretrained on ImageNet      |
+| include_top = False         |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| GlobalAveragePooling2D      |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| BatchNormalization          |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Dense Layer                 |
+| 128 neurons, ReLU           |
+| L2 regularization = 1e-4    |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| BatchNormalization          |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Dropout                     |
+| rate = 0.4                  |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Output Layer                |
+| Dense(1), Sigmoid           |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Prediction Output           |
+| 0 = Diseased                |
+| 1 = Healthy                 |
+| threshold = 0.5             |
++-----------------------------+
+
+7. Training Configuration
+-------------------------
+Loss function             : Binary Crossentropy
+Label smoothing           : 0.05
+Optimizer phase 1         : Adam
+Learning rate phase 1     : 0.001
+Epochs phase 1            : 25
+Early stopping phase 1    : patience=8, monitor=val_accuracy
+Optimizer phase 2         : Adam
+Learning rate phase 2     : 1e-05
+Epochs phase 2            : 60
+Fine-tuned layers         : Last 50 layers of the base model
+BatchNormalization layers : Frozen during fine-tuning
+Early stopping phase 2    : patience=12, monitor=val_accuracy
+Learning rate scheduler   : ReduceLROnPlateau, factor=0.2, patience=3, min_lr=1e-6
+
+8. Evaluation Metrics
+---------------------
+Metrics used              : Accuracy, Precision, Recall, AUC, F1-score
+Decision threshold        : 0.5
+Evaluation set            : Validation set
+
+9. Final Classification Report
+------------------------------
+              precision    recall  f1-score   support
+
+    diseased       1.00      0.99      1.00       600
+     healthy       0.99      1.00      1.00       600
+
+    accuracy                           1.00      1200
+   macro avg       1.00      1.00      1.00      1200
+weighted avg       1.00      1.00      1.00      1200
+
+
+10. Confusion Matrix
+--------------------
+Class order               : diseased, healthy
+Matrix format             : rows=true labels, columns=predicted labels
+
+[[596   4]
+ [  0 600]]
+
+True Diseased predicted Diseased : 596
+True Diseased predicted Healthy  : 4
+True Healthy predicted Diseased  : 0
+True Healthy predicted Healthy   : 600
+
+11. Final Training Summary
+--------------------------
+Final training accuracy   : 0.9910
+Final training loss       : 0.1834
+Final validation accuracy : 0.9967
+Best val accuracy phase 1 : 0.9900
+Best val accuracy phase 2 : 0.9967
+
+12. Saved Outputs
+-----------------
+Best model path           : E:\ML_DL_Models\DL\MobileNetV3\Base\best_model_binary_mobilenetv3.keras
+Final model path          : E:\ML_DL_Models\DL\MobileNetV3\Base\mobilenet_v3_binary_final.keras
+Training curve image      : E:\ML_DL_Models\DL\MobileNetV3\Base\training_curve.png
+Confusion matrix image    : E:\ML_DL_Models\DL\MobileNetV3\Base\confusion_matrix.png
+Text report path          : E:\ML_DL_Models\DL\MobileNetV3\Base\training_report_journal_friendly.txt
+
+13. Suggested Journal Method Description
+----------------------------------------
+This study performed binary classification of tomato leaf images into diseased and healthy classes. The dataset consisted of 6,000 images, with 3,000 images assigned to each class. A stratified train-validation split was applied with an 80:20 ratio, resulting in 4,800 training images and 1,200 validation images. The validation set contained 600 diseased and 600 healthy images. Images were resized to 300 x 300 pixels and processed using a TensorFlow data pipeline. Data augmentation, including random horizontal flipping, rotation, zooming, and contrast adjustment, was applied during training to improve generalization. The model used MobileNetV3Large pretrained on ImageNet as the feature extractor, followed by a custom classifier head consisting of global average pooling, batch normalization, dense, dropout, and sigmoid output layers. Training was conducted in two phases: first, only the classifier head was trained while the base model was frozen; second, the last 50 layers of the base model were fine-tuned with a lower learning rate. The model was optimized using Adam and binary cross-entropy loss. Performance was evaluated using accuracy, precision, recall, F1-score, AUC, and confusion matrix analysis.
+
+14. Important Methodological Note
+---------------------------------
+If augmented images were generated before splitting the dataset, there is a possibility that visually similar augmented variants of the same original image may appear in both training and validation sets. For stricter experimental validity, the recommended approach is to split the original images first and apply augmentation only to the training subset.
