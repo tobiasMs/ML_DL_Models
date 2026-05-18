@@ -16,7 +16,7 @@ import platform
 BASE_DIR = Path(__file__).resolve().parent
 base_dir = BASE_DIR.parent.parent.parent / "TomatoBinaryDataset"
 
-IMAGE_SIZE = (224, 224)
+IMAGE_SIZE = (300, 300)
 BATCH_SIZE = 32
 SEED = 123
 VALIDATION_SPLIT = 0.2

@@ -3,7 +3,7 @@ JOURNAL-FRIENDLY TRAINING REPORT
 
 1. Experiment Information
 -------------------------
-Report generated at       : 2026-05-12 15:49:35
+Report generated at       : 2026-05-18 13:07:18
 Python version            : 3.13.5
 TensorFlow version        : 2.20.0
 Random seed               : 123
@@ -33,7 +33,7 @@ Validation healthy images : 600
 
 4. Image Preprocessing
 ----------------------
-Input image size          : 224 x 224 pixels
+Input image size          : 300 x 300 pixels
 Batch size                : 32
 Color format              : RGB
 Image resizing            : TensorFlow resize operation
@@ -68,7 +68,7 @@ The proposed binary classification model follows the architecture flow below:
 
 +-----------------------------+
 | Input Image                 |
-| 224 x 224 x 3 RGB           |
+| 300 x 300 x 3 RGB           |
 +-------------+---------------+
               |
               v
@@ -200,8 +200,8 @@ True Healthy predicted Healthy   : 600
 
 11. Final Training Summary
 --------------------------
-Final training accuracy   : 0.9962
-Final training loss       : 0.1843
+Final training accuracy   : 0.9912
+Final training loss       : 0.1931
 Final validation accuracy : 0.9967
 Best val accuracy phase 1 : 0.9950
 Best val accuracy phase 2 : 0.9967
