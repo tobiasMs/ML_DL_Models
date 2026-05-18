@@ -2,3 +2,10 @@
 /TomatoBinaryDataset
 /DL/ResNet/Base/best_model_binary_resnet50.keras
 /DL/ResNet/Base/resnet50_binary_final.keras
+/DL/ResNet/Base/training_report_resnet50_journal_friendly.txt
+/DL/ResNet/Basev2/best_model_binary_resnet50.keras
+/DL/ResNet/Basev2/resnet50_binary_final.keras
+/DL/ResNet/Basev2/training_report_resnet50.txt
+/DL/MobileNetV3/Basev2/best_model_binary_mobilenetv3.keras
+/DL/MobileNetV3/Basev2/mobilenet_v3_binary_final.keras
+/DL/MobileNetV3/Basev2/training_report_journal_friendly.txt
