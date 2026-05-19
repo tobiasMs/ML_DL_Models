@@ -14,7 +14,7 @@ import seaborn as sns
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-base_dir = BASE_DIR.parent.parent.parent / "TomatoDataset"
+base_dir = BASE_DIR.parent.parent.parent / "TomatoBinaryDataset"
 
 # Resolusi sedikit lebih besar supaya detail bercak daun lebih mudah ditangkap
 IMAGE_SIZE = (256, 256)
