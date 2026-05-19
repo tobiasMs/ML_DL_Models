@@ -9,3 +9,9 @@
 /DL/MobileNetV3/Basev2/best_model_binary_mobilenetv3.keras
 /DL/MobileNetV3/Basev2/mobilenet_v3_binary_final.keras
 /DL/MobileNetV3/Basev2/training_report_journal_friendly.txt
+/DL/EfficientNet/Base/training_report_journal_friendly.txt
+/DL/EfficientNet/Base/best_model_binary_efficientnetb0.keras
+/DL/EfficientNet/Base/efficientnetb0_binary_final.keras
+/DL/EfficientNet/Opt/training_report_journal_friendly.txt
+/DL/EfficientNet/Opt/best_model_binary_efficientnetv3.keras
+/DL/EfficientNet/Opt/efficientnetb0_binary_final.keras
