@@ -1,0 +1,91 @@
+JOURNAL-FRIENDLY BASE MACHINE LEARNING REPORT
+============================================
+
+1. Experiment Information
+-------------------------
+Report generated at       : 2026-05-26 14:16:26
+Python version            : 3.13.5
+OpenCV version            : 4.13.0
+Random seed               : 123
+
+2. Dataset Description
+----------------------
+Dataset name              : Tomato Binary Dataset
+Dataset task              : Binary image classification
+Classes                   : diseased, healthy
+Dataset directory         : E:\ML_DL_Models\TomatoBinaryDataset
+Total images              : 6000
+Total diseased images     : 3000
+Total healthy images      : 3000
+
+3. Train-Validation Split
+-------------------------
+Split method              : Stratified train-validation split
+Validation ratio          : 0.2
+Training images           : 4800
+Validation images         : 1200
+Training diseased images  : 2400
+Training healthy images   : 2400
+Validation diseased images: 600
+Validation healthy images : 600
+
+4. Image Preprocessing
+----------------------
+Input image size          : 300 x 300
+Color format              : RGB
+Image resizing            : OpenCV resize operation
+
+5. Data Augmentation
+--------------------
+Augmentation applied      : Yes, training set only
+Augmentation strategy     : One input image produces one augmented image, so the number of training samples remains unchanged.
+Augmentation techniques   :
+- Random horizontal flip
+- Random rotation
+- Random zoom
+- Random contrast
+
+6. Machine Learning Model
+-------------------------
+Model                     : LBP + Random Forest
+Feature extraction        : Local Binary Pattern (LBP)
+Classifier                : Random Forest
+Number of estimators      : 200
+Max depth                 : None
+
+7. Feature Dataset Shape
+------------------------
+Training feature shape    : (4800, 26)
+Validation feature shape  : (1200, 26)
+
+8. Evaluation Metrics
+---------------------
+Metrics used              : Accuracy, Precision, Recall, F1-score, Confusion Matrix
+
+9. Final Classification Report
+------------------------------
+              precision    recall  f1-score   support
+
+    diseased       0.93      0.74      0.83       600
+     healthy       0.79      0.95      0.86       600
+
+    accuracy                           0.84      1200
+   macro avg       0.86      0.84      0.84      1200
+weighted avg       0.86      0.84      0.84      1200
+
+
+10. Confusion Matrix
+--------------------
+[[446 154]
+ [ 32 568]]
+
+11. Final Summary
+-----------------
+Validation accuracy       : 0.8450
+
+12. Saved Outputs
+-----------------
+Saved model path          : E:\ML_DL_Models\ML\RandomForest\Base\lbp_random_forest_base_outputs\lbp_random_forest_base_model.joblib
+Confusion matrix image    : E:\ML_DL_Models\ML\RandomForest\Base\lbp_random_forest_base_outputs\lbp_random_forest_confusion_matrix.png
+Augmentation sample image : E:\ML_DL_Models\ML\RandomForest\Base\lbp_random_forest_base_outputs\lbp_random_forest_augmentation_sample.png
+Text report path          : E:\ML_DL_Models\ML\RandomForest\Base\lbp_random_forest_base_outputs\lbp_random_forest_base_report.txt
