@@ -1,79 +1,51 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from sklearn.utils import class_weight
-from sklearn.model_selection import train_test_split
 from tensorflow.keras import layers, models
 from pathlib import Path
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, classification_report
 import seaborn as sns
+import datetime
+import platform
 
-
-# ============================================================
+# =========================================================
 # 1. KONFIGURASI
-# ============================================================
+# =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 base_dir = BASE_DIR.parent.parent.parent / "TomatoBinaryDataset"
 
-# Resolusi sedikit lebih besar supaya detail bercak daun lebih mudah ditangkap
-IMAGE_SIZE = (256, 256)
-
-# Lebih stabil untuk fine-tuning
-BATCH_SIZE = 16
-
+IMAGE_SIZE = (300, 300)
+BATCH_SIZE = 32
 SEED = 123
 VALIDATION_SPLIT = 0.2
 
-# Regularisasi yang terlalu kuat sering menahan akurasi di bawah target
-USE_MIXUP = False
-MIXUP_ALPHA = 0.1
-
 LABEL_SMOOTHING = 0.05
 
-# Focal loss dipertahankan sebagai opsi, tetapi default-nya dimatikan
-USE_FOCAL_LOSS = False
-FOCAL_GAMMA = 1.5
-FOCAL_ALPHA = 0.25
+BASE_MODEL_NAME = "MobileNetV3Large"
+TRANSFER_LEARNING_WEIGHTS = "ImageNet"
 
-# Class Weight
-CLASS_WEIGHT_MODE = "sqrt"
-
-BEST_MODEL_PATH = BASE_DIR / "best_model_mobilenetv3_v2.keras"
-FINAL_MODEL_PATH = BASE_DIR / "mobilenetv3_v2.keras"
+BEST_MODEL_PATH = BASE_DIR / "best_model_binary_mobilenetv3.keras"
+FINAL_MODEL_PATH = BASE_DIR / "mobilenet_v3_binary_final.keras"
+REPORT_TXT_PATH = BASE_DIR / "training_report_journal_friendly.txt"
+CONFUSION_MATRIX_PATH = BASE_DIR / "confusion_matrix.png"
+TRAINING_CURVE_PATH = BASE_DIR / "training_curve.png"
 
 tf.keras.utils.set_random_seed(SEED)
 
-AUTOTUNE = tf.data.AUTOTUNE
+# =========================================================
+# 2. LOAD PATH GAMBAR DAN LABEL
+# =========================================================
 
+class_names = ["diseased", "healthy"]
 
-# ============================================================
-# 2. LOAD DATASET PATH
-# ============================================================
-
-if not base_dir.exists():
-    raise FileNotFoundError(f"Dataset tidak ditemukan: {base_dir}")
-
-valid_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".webp"]
-
-class_names = sorted([
-    folder.name for folder in base_dir.iterdir()
-    if folder.is_dir()
-])
-
-num_classes = len(class_names)
-
-if num_classes == 0:
-    raise ValueError("Folder class tidak ditemukan.")
-
-class_to_index = {
-    class_name: idx
-    for idx, class_name in enumerate(class_names)
+class_to_label = {
+    "diseased": 0,
+    "healthy": 1
 }
 
-print("\nClass Names:")
-for idx, name in enumerate(class_names):
-    print(f"{idx}: {name}")
+valid_ext = [".jpg", ".jpeg", ".png"]
 
 image_paths = []
 labels = []
@@ -81,38 +53,29 @@ labels = []
 for class_name in class_names:
     class_dir = base_dir / class_name
 
-    for img_path in class_dir.rglob("*"):
-        if img_path.is_file() and img_path.suffix.lower() in valid_extensions:
+    if not class_dir.exists():
+        raise FileNotFoundError(f"Folder tidak ditemukan: {class_dir}")
+
+    for img_path in class_dir.iterdir():
+        if img_path.suffix.lower() in valid_ext:
             image_paths.append(str(img_path))
-            labels.append(class_to_index[class_name])
+            labels.append(class_to_label[class_name])
 
 image_paths = np.array(image_paths)
 labels = np.array(labels)
 
-if len(image_paths) == 0:
-    raise ValueError("Tidak ada gambar ditemukan.")
+total_diseased = int(np.sum(labels == 0))
+total_healthy = int(np.sum(labels == 1))
+total_dataset = len(labels)
 
-print(f"\nTotal gambar: {len(image_paths)}")
+print("\nTotal dataset:")
+print(f"diseased: {total_diseased}")
+print(f"healthy : {total_healthy}")
+print(f"total   : {total_dataset}")
 
-
-# ============================================================
-# 3. DISTRIBUSI DATASET
-# ============================================================
-
-print("\nDistribusi Dataset:")
-print("=" * 90)
-
-for i, class_name in enumerate(class_names):
-    count = np.sum(labels == i)
-
-    print(
-        f"{i:2d} | {class_name:55s} | total: {count:5d}"
-    )
-
-
-# ============================================================
-# 4. STRATIFIED SPLIT
-# ============================================================
+# =========================================================
+# 3. STRATIFIED TRAIN-VALIDATION SPLIT
+# =========================================================
 
 train_paths, val_paths, train_labels, val_labels = train_test_split(
     image_paths,
@@ -122,475 +85,145 @@ train_paths, val_paths, train_labels, val_labels = train_test_split(
     stratify=labels
 )
 
-print("\nDistribusi Setelah Stratified Split:")
-print("=" * 100)
+train_diseased = int(np.sum(train_labels == 0))
+train_healthy = int(np.sum(train_labels == 1))
+val_diseased = int(np.sum(val_labels == 0))
+val_healthy = int(np.sum(val_labels == 1))
 
-for i, class_name in enumerate(class_names):
-    train_count = np.sum(train_labels == i)
-    val_count = np.sum(val_labels == i)
+print("\nTrain dataset:")
+print(f"diseased: {train_diseased}")
+print(f"healthy : {train_healthy}")
+print(f"total   : {len(train_labels)}")
 
-    print(
-        f"{i:2d} | {class_name:55s} | "
-        f"train: {train_count:5d} | val: {val_count:5d}"
-    )
+print("\nValidation dataset:")
+print(f"diseased: {val_diseased}")
+print(f"healthy : {val_healthy}")
+print(f"total   : {len(val_labels)}")
 
-
-# ============================================================
-# 5. LOAD IMAGE
-# ============================================================
+# =========================================================
+# 4. TF.DATA PIPELINE
+# =========================================================
 
 def load_image(path, label):
     image = tf.io.read_file(path)
-
-    image = tf.image.decode_image(
-        image,
-        channels=3,
-        expand_animations=False
-    )
-
-    image.set_shape([None, None, 3])
-
+    image = tf.image.decode_image(image, channels=3, expand_animations=False)
     image = tf.image.resize(image, IMAGE_SIZE)
-
     image = tf.cast(image, tf.float32)
 
-    label = tf.one_hot(label, depth=num_classes)
+    label = tf.cast(label, tf.float32)
 
     return image, label
 
 
-# ============================================================
-# 6. DATA AUGMENTATION
-# ============================================================
+AUTOTUNE = tf.data.AUTOTUNE
 
-# AUGMENTASI DIPERINGAN
-# supaya model tidak underfit
+train_ds = tf.data.Dataset.from_tensor_slices((train_paths, train_labels))
+train_ds = train_ds.shuffle(buffer_size=len(train_paths), seed=SEED)
+train_ds = train_ds.map(load_image, num_parallel_calls=AUTOTUNE)
+train_ds = train_ds.batch(BATCH_SIZE)
+train_ds = train_ds.prefetch(AUTOTUNE)
+
+val_ds = tf.data.Dataset.from_tensor_slices((val_paths, val_labels))
+val_ds = val_ds.map(load_image, num_parallel_calls=AUTOTUNE)
+val_ds = val_ds.batch(BATCH_SIZE)
+val_ds = val_ds.prefetch(AUTOTUNE)
+
+# =========================================================
+# 5. AUGMENTASI
+# =========================================================
 
 data_augmentation = tf.keras.Sequential([
     layers.RandomFlip("horizontal"),
-    layers.RandomRotation(0.08),
-    layers.RandomZoom(0.12),
-    layers.RandomTranslation(0.05, 0.05),
-    layers.RandomContrast(0.1),
+    layers.RandomRotation(0.05),
+    layers.RandomZoom(0.05),
+    layers.RandomContrast(0.05),
 ], name="data_augmentation")
 
-
-# ============================================================
-# 7. VISUALISASI AUGMENTASI
-# ============================================================
+AUGMENTATION_DESCRIPTION = """
+Data augmentation was applied only during the training stage using horizontal flipping,
+random rotation, random zoom, and random contrast adjustment. The augmentation was used
+to improve generalization and reduce overfitting.
+"""
 
 def visualize_augmentation(ds, augmentation_layer):
     plt.figure(figsize=(10, 10))
 
-    for images, labels in ds.take(1):
+    for images, labels_batch in ds.take(1):
+        for i in range(3):
+            label_name = class_names[int(labels_batch[i].numpy())]
 
-        for i in range(min(3, images.shape[0])):
-
-            # ORIGINAL
-            ax = plt.subplot(3, 2, 2 * i + 1)
-
-            image = tf.clip_by_value(images[i], 0, 255)
-
-            plt.imshow(image.numpy().astype("uint8"))
-
-            plt.title(
-                f"Original: "
-                f"{class_names[np.argmax(labels[i])]}"
-            )
-
+            plt.subplot(3, 2, 2 * i + 1)
+            plt.imshow(images[i].numpy().astype("uint8"))
+            plt.title(f"Original: {label_name}")
             plt.axis("off")
 
-            # AUGMENTED
-            augmented_image = augmentation_layer(
-                tf.expand_dims(images[i], 0),
-                training=True
-            )
+            augmented_image = augmentation_layer(tf.expand_dims(images[i], 0), training=True)
 
-            augmented_image = tf.clip_by_value(
-                augmented_image[0],
-                0,
-                255
-            )
-
-            ax = plt.subplot(3, 2, 2 * i + 2)
-
-            plt.imshow(
-                augmented_image.numpy().astype("uint8")
-            )
-
+            plt.subplot(3, 2, 2 * i + 2)
+            plt.imshow(augmented_image[0].numpy().astype("uint8"))
             plt.title("After Augmentation")
-
             plt.axis("off")
 
-    plt.suptitle(
-        "Sample Data Augmentation Before vs After"
-    )
-
+    plt.suptitle("Sample Data Augmentation Before vs After")
     plt.tight_layout()
-
     plt.show(block=False)
-
     plt.pause(0.1)
 
 
-# ============================================================
-# 8. MIXUP
-# ============================================================
+visualize_augmentation(train_ds, data_augmentation)
 
-def sample_beta_distribution(size, alpha):
-    gamma_1 = tf.random.gamma(
-        shape=[size],
-        alpha=alpha
-    )
+# =========================================================
+# 6. MODEL BINARY CLASSIFICATION
+# =========================================================
 
-    gamma_2 = tf.random.gamma(
-        shape=[size],
-        alpha=alpha
-    )
-
-    return gamma_1 / (gamma_1 + gamma_2)
-
-
-def mixup(images, labels, alpha=0.1):
-    batch_size = tf.shape(images)[0]
-
-    lam = sample_beta_distribution(
-        batch_size,
-        alpha
-    )
-
-    lam_x = tf.reshape(
-        lam,
-        (batch_size, 1, 1, 1)
-    )
-
-    lam_y = tf.reshape(
-        lam,
-        (batch_size, 1)
-    )
-
-    index = tf.random.shuffle(
-        tf.range(batch_size)
-    )
-
-    mixed_images = (
-        images * lam_x +
-        tf.gather(images, index) * (1 - lam_x)
-    )
-
-    mixed_labels = (
-        labels * lam_y +
-        tf.gather(labels, index) * (1 - lam_y)
-    )
-
-    return mixed_images, mixed_labels
-
-
-# ============================================================
-# 9. BUILD DATASET
-# ============================================================
-
-train_ds = tf.data.Dataset.from_tensor_slices(
-    (train_paths, train_labels)
+base_model = tf.keras.applications.MobileNetV3Large(
+    input_shape=(*IMAGE_SIZE, 3),
+    include_top=False,
+    weights="imagenet"
 )
 
-train_ds = train_ds.shuffle(
-    buffer_size=len(train_paths),
-    seed=SEED,
-    reshuffle_each_iteration=True
-)
+base_model.trainable = False
 
-train_ds = train_ds.map(
-    load_image,
-    num_parallel_calls=AUTOTUNE
-)
+inputs = layers.Input(shape=(*IMAGE_SIZE, 3))
 
-train_ds = train_ds.batch(BATCH_SIZE)
+x = data_augmentation(inputs)
 
-# VISUALISASI AUGMENTASI
-visualize_augmentation(
-    train_ds,
-    data_augmentation
-)
+# MobileNetV3 di Keras secara default sudah memiliki preprocessing internal
+# melalui include_preprocessing=True.
+x = base_model(x, training=False)
 
-# MIXUP
-if USE_MIXUP:
-    train_ds = train_ds.map(
-        lambda x, y: mixup(
-            x,
-            y,
-            MIXUP_ALPHA
-        ),
-        num_parallel_calls=AUTOTUNE
-    )
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.BatchNormalization()(x)
 
-train_ds = train_ds.prefetch(AUTOTUNE)
+x = layers.Dense(
+    128,
+    activation="relu",
+    kernel_regularizer=tf.keras.regularizers.l2(1e-4)
+)(x)
 
-val_ds = tf.data.Dataset.from_tensor_slices(
-    (val_paths, val_labels)
-)
+x = layers.BatchNormalization()(x)
+x = layers.Dropout(0.4)(x)
 
-val_ds = val_ds.map(
-    load_image,
-    num_parallel_calls=AUTOTUNE
-)
+outputs = layers.Dense(1, activation="sigmoid")(x)
 
-val_ds = val_ds.batch(BATCH_SIZE)
+model = models.Model(inputs, outputs)
 
-val_ds = val_ds.prefetch(AUTOTUNE)
+# =========================================================
+# 7. CALLBACKS
+# =========================================================
 
-
-# ============================================================
-# 10. CLASS WEIGHT
-# ============================================================
-
-weights = class_weight.compute_class_weight(
-    class_weight="balanced",
-    classes=np.arange(num_classes),
-    y=train_labels
-)
-
-if CLASS_WEIGHT_MODE == "sqrt":
-
-    selected_weights = np.sqrt(weights)
-
-    selected_weights = (
-        selected_weights /
-        np.mean(selected_weights)
-    )
-
-    class_weights = {
-        int(i): float(w)
-        for i, w in zip(
-            np.arange(num_classes),
-            selected_weights
-        )
-    }
-
-elif CLASS_WEIGHT_MODE == "balanced":
-
-    class_weights = {
-        int(i): float(w)
-        for i, w in zip(
-            np.arange(num_classes),
-            weights
-        )
-    }
-
-else:
-    class_weights = None
-
-print("\nClass Weights:")
-print(class_weights)
-
-
-# ============================================================
-# 11. LOSS FUNCTION
-# ============================================================
-
-def categorical_focal_loss(
-    gamma=2.0,
-    alpha=0.5
-):
-
-    def loss(y_true, y_pred):
-
-        y_pred = tf.clip_by_value(
-            y_pred,
-            1e-7,
-            1.0 - 1e-7
-        )
-
-        cross_entropy = (
-            -y_true *
-            tf.math.log(y_pred)
-        )
-
-        focal_weight = (
-            alpha *
-            tf.pow(
-                1.0 - y_pred,
-                gamma
-            )
-        )
-
-        focal_loss = (
-            focal_weight *
-            cross_entropy
-        )
-
-        return tf.reduce_sum(
-            focal_loss,
-            axis=1
-        )
-
-    return loss
-
-
-loss_function = categorical_focal_loss(
-    gamma=FOCAL_GAMMA,
-    alpha=FOCAL_ALPHA
-)
-
-
-def get_loss_function():
-
-    if USE_FOCAL_LOSS:
-        return loss_function
-
-    return tf.keras.losses.CategoricalCrossentropy(
-        label_smoothing=LABEL_SMOOTHING
-    )
-
-
-# ============================================================
-# 12. ATTENTION BLOCK
-# ============================================================
-
-def se_block(x, ratio=8):
-    channels = x.shape[-1]
-
-    se = layers.GlobalAveragePooling2D()(x)
-
-    se = layers.Dense(
-        channels // ratio,
-        activation="relu",
-        kernel_initializer="he_normal"
-    )(se)
-
-    se = layers.Dense(
-        channels,
-        activation="sigmoid",
-        kernel_initializer="he_normal"
-    )(se)
-
-    se = layers.Reshape(
-        (1, 1, channels)
-    )(se)
-
-    x = layers.Multiply()([x, se])
-
-    return x
-
-
-def spatial_attention_block(x):
-
-    avg_pool = layers.Lambda(
-        lambda t: tf.reduce_mean(
-            t,
-            axis=-1,
-            keepdims=True
-        )
-    )(x)
-
-    max_pool = layers.Lambda(
-        lambda t: tf.reduce_max(
-            t,
-            axis=-1,
-            keepdims=True
-        )
-    )(x)
-
-    concat = layers.Concatenate(
-        axis=-1
-    )([avg_pool, max_pool])
-
-    attention = layers.Conv2D(
-        filters=1,
-        kernel_size=7,
-        padding="same",
-        activation="sigmoid"
-    )(concat)
-
-    x = layers.Multiply()([x, attention])
-
-    return x
-
-
-# ============================================================
-# 13. BUILD MODEL
-# ============================================================
-
-def build_model():
-
-    base_model = tf.keras.applications.MobileNetV3Large(
-        input_shape=(*IMAGE_SIZE, 3),
-        include_top=False,
-        weights="imagenet",
-        include_preprocessing=True
-    )
-
-    base_model.trainable = False
-
-    inputs = layers.Input(
-        shape=(*IMAGE_SIZE, 3),
-        name="input_image"
-    )
-
-    x = data_augmentation(inputs)
-
-    # BACKBONE
-    x = base_model(
-        x,
-        training=False
-    )
-
-    # Head yang lebih sederhana biasanya lebih stabil untuk fine-tuning
-    gap = layers.GlobalAveragePooling2D()(x)
-    gmp = layers.GlobalMaxPooling2D()(x)
-    x = layers.Concatenate()([gap, gmp])
-
-    x = layers.BatchNormalization()(x)
-
-    x = layers.Dense(
-        384,
-        activation="swish",
-        kernel_regularizer=tf.keras.regularizers.l2(1e-4)
-    )(x)
-
-    x = layers.BatchNormalization()(x)
-
-    x = layers.Dropout(0.35)(x)
-
-    x = layers.Dense(
-        192,
-        activation="swish",
-        kernel_regularizer=tf.keras.regularizers.l2(1e-4)
-    )(x)
-
-    x = layers.BatchNormalization()(x)
-
-    x = layers.Dropout(0.25)(x)
-
-    outputs = layers.Dense(
-        num_classes,
-        activation="softmax"
-    )(x)
-
-    model = models.Model(
-        inputs,
-        outputs,
-        name="MobileNetV3Large_V2"
-    )
-
-    return model, base_model
-
-
-model, base_model = build_model()
-
-model.summary()
-
-
-# ============================================================
-# 14. CALLBACKS
-# ============================================================
-
-def get_callbacks(patience):
-
+def get_callbacks(patience_es):
     return [
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.2,
+            patience=3,
+            min_lr=1e-6,
+            verbose=1
+        ),
 
         tf.keras.callbacks.ModelCheckpoint(
-            filepath=str(BEST_MODEL_PATH),
+            str(BEST_MODEL_PATH),
             monitor="val_accuracy",
             save_best_only=True,
             mode="max",
@@ -599,260 +232,161 @@ def get_callbacks(patience):
 
         tf.keras.callbacks.EarlyStopping(
             monitor="val_accuracy",
-            patience=patience,
+            patience=patience_es,
             restore_best_weights=True,
             verbose=1
         )
     ]
 
-# ============================================================
-# 15. PHASE 1 TRAINING
-# ============================================================
+# =========================================================
+# 8. PHASE 1 - TRAINING CLASSIFIER HEAD
+# =========================================================
 
-print("\n" + "=" * 80)
-print("PHASE 1 TRAINING")
-print("=" * 80)
+print("\n--- Phase 1: Training Classifier Head ---")
+
+PHASE_1_LEARNING_RATE = 1e-3
+PHASE_1_EPOCHS = 25
+PHASE_1_PATIENCE = 8
 
 model.compile(
-    optimizer=tf.keras.optimizers.AdamW(
-        learning_rate=1e-3,
-        weight_decay=1e-4
-    ),
-    loss=get_loss_function(),
-    metrics=["accuracy"]
+    optimizer=tf.keras.optimizers.Adam(learning_rate=PHASE_1_LEARNING_RATE),
+    loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=LABEL_SMOOTHING),
+    metrics=[
+        "accuracy",
+        tf.keras.metrics.Precision(name="precision"),
+        tf.keras.metrics.Recall(name="recall"),
+        tf.keras.metrics.AUC(name="auc")
+    ]
 )
 
 history = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=25,
-    class_weight=class_weights,
-    callbacks=get_callbacks(8)
+    epochs=PHASE_1_EPOCHS,
+    callbacks=get_callbacks(PHASE_1_PATIENCE)
 )
 
+# =========================================================
+# 9. PHASE 2 - FINE-TUNING BACKBONE
+# =========================================================
 
-# ============================================================
-# 16. PHASE 2 FINE TUNING
-# ============================================================
+print("\n--- Phase 2: Fine-Tuning Backbone ---")
 
-print("\n" + "=" * 80)
-print("PHASE 2 FINE TUNING")
-print("=" * 80)
+PHASE_2_LEARNING_RATE = 1e-5
+PHASE_2_EPOCHS = 60
+PHASE_2_PATIENCE = 12
+UNFROZEN_LAST_LAYERS = 50
 
 base_model.trainable = True
 
-# Buka lebih banyak layer, tetapi tetap simpan bagian awal backbone
-for layer in base_model.layers[:-80]:
+for layer in base_model.layers[:-UNFROZEN_LAST_LAYERS]:
     layer.trainable = False
 
-# FREEZE BN
 for layer in base_model.layers:
-    if isinstance(
-        layer,
-        layers.BatchNormalization
-    ):
+    if isinstance(layer, layers.BatchNormalization):
         layer.trainable = False
 
-trainable_layers = sum([
-    1 for layer in base_model.layers
-    if layer.trainable
-])
-
-print(
-    f"\nTrainable backbone layer: "
-    f"{trainable_layers}"
-)
-
-# COSINE DECAY
-lr_schedule = tf.keras.optimizers.schedules.CosineDecay(
-    initial_learning_rate=5e-5,
-    decay_steps=1500
-)
-
-optimizer = tf.keras.optimizers.AdamW(
-    learning_rate=lr_schedule,
-    weight_decay=1e-5
-)
-
 model.compile(
-    optimizer=optimizer,
-    loss=get_loss_function(),
-    metrics=["accuracy"]
+    optimizer=tf.keras.optimizers.Adam(learning_rate=PHASE_2_LEARNING_RATE),
+    loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=LABEL_SMOOTHING),
+    metrics=[
+        "accuracy",
+        tf.keras.metrics.Precision(name="precision"),
+        tf.keras.metrics.Recall(name="recall"),
+        tf.keras.metrics.AUC(name="auc")
+    ]
 )
 
 fine_tune_history = model.fit(
     train_ds,
     validation_data=val_ds,
-    initial_epoch=len(history.history["accuracy"]),
-    epochs=80,
-    class_weight=class_weights,
-    callbacks=get_callbacks(12)
+    initial_epoch=history.epoch[-1] + 1,
+    epochs=PHASE_2_EPOCHS,
+    callbacks=get_callbacks(PHASE_2_PATIENCE)
 )
 
+# =========================================================
+# 10. EVALUASI MODEL
+# =========================================================
 
-# ============================================================
-# 17. PLOT TRAINING HISTORY
-# ============================================================
+def evaluate_model(model, val_ds):
+    y_true = []
+    y_pred = []
+    y_prob = []
 
-def plot_training_history(h1, h2):
+    for images, labels_batch in val_ds:
+        probs = model.predict(images, verbose=0)
+        preds = (probs >= 0.5).astype(int).reshape(-1)
 
-    acc = (
-        h1.history["accuracy"] +
-        h2.history["accuracy"]
+        y_true.extend(labels_batch.numpy().astype(int))
+        y_pred.extend(preds)
+        y_prob.extend(probs.reshape(-1))
+
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    y_prob = np.array(y_prob)
+
+    cm = confusion_matrix(y_true, y_pred)
+    report_dict = classification_report(
+        y_true,
+        y_pred,
+        target_names=class_names,
+        output_dict=True
+    )
+    report_text = classification_report(
+        y_true,
+        y_pred,
+        target_names=class_names
     )
 
-    val_acc = (
-        h1.history["val_accuracy"] +
-        h2.history["val_accuracy"]
-    )
+    return y_true, y_pred, y_prob, cm, report_dict, report_text
 
-    loss = (
-        h1.history["loss"] +
-        h2.history["loss"]
-    )
 
-    val_loss = (
-        h1.history["val_loss"] +
-        h2.history["val_loss"]
-    )
+y_true, y_pred, y_prob, cm, report_dict, report_text = evaluate_model(model, val_ds)
 
-    plt.figure(figsize=(14, 5))
+# =========================================================
+# 11. PLOT TRAINING CURVE
+# =========================================================
 
-    # ACCURACY
+def save_training_curve(h1, h2, save_path):
+    acc = h1.history["accuracy"] + h2.history["accuracy"]
+    val_acc = h1.history["val_accuracy"] + h2.history["val_accuracy"]
+
+    loss = h1.history["loss"] + h2.history["loss"]
+    val_loss = h1.history["val_loss"] + h2.history["val_loss"]
+
+    plt.figure(figsize=(12, 5))
+
     plt.subplot(1, 2, 1)
-
-    plt.plot(
-        acc,
-        label="Train Accuracy"
-    )
-
-    plt.plot(
-        val_acc,
-        label="Validation Accuracy"
-    )
-
-    plt.axvline(
-        x=len(h1.history["accuracy"]) - 1,
-        linestyle="--",
-        label="Start Fine Tuning"
-    )
-
-    plt.title("Accuracy")
+    plt.plot(acc, label="Training Accuracy")
+    plt.plot(val_acc, label="Validation Accuracy")
+    plt.title("Training and Validation Accuracy")
     plt.xlabel("Epoch")
     plt.ylabel("Accuracy")
     plt.legend()
 
-    # LOSS
     plt.subplot(1, 2, 2)
-
-    plt.plot(
-        loss,
-        label="Train Loss"
-    )
-
-    plt.plot(
-        val_loss,
-        label="Validation Loss"
-    )
-
-    plt.axvline(
-        x=len(h1.history["loss"]) - 1,
-        linestyle="--",
-        label="Start Fine Tuning"
-    )
-
-    plt.title("Loss")
+    plt.plot(loss, label="Training Loss")
+    plt.plot(val_loss, label="Validation Loss")
+    plt.title("Training and Validation Loss")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.legend()
 
     plt.tight_layout()
-
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.show(block=False)
-
     plt.pause(0.1)
 
 
-plot_training_history(
-    history,
-    fine_tune_history
-)
+save_training_curve(history, fine_tune_history, TRAINING_CURVE_PATH)
 
+# =========================================================
+# 12. PLOT CONFUSION MATRIX
+# =========================================================
 
-# ============================================================
-# 18. EVALUASI MODEL
-# ============================================================
-
-def evaluate_model(
-    model,
-    val_ds,
-    class_names
-):
-
-    print("\n" + "=" * 80)
-    print("EVALUASI MODEL")
-    print("=" * 80)
-
-    val_loss, val_acc = model.evaluate(
-        val_ds,
-        verbose=1
-    )
-
-    print(f"\nValidation Loss     : {val_loss:.4f}")
-    print(f"Validation Accuracy : {val_acc:.4f}")
-    print(f"Validation Accuracy : {val_acc * 100:.2f}%")
-
-    y_true = []
-    y_pred = []
-
-    for images, labels_batch in val_ds:
-
-        preds = model.predict(
-            images,
-            verbose=0
-        )
-
-        y_true.extend(
-            np.argmax(
-                labels_batch.numpy(),
-                axis=1
-            )
-        )
-
-        y_pred.extend(
-            np.argmax(
-                preds,
-                axis=1
-            )
-        )
-
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
-
-    labels_range = np.arange(
-        len(class_names)
-    )
-
-    print("\nClassification Report:")
-
-    print(
-        classification_report(
-            y_true,
-            y_pred,
-            labels=labels_range,
-            target_names=class_names,
-            digits=4,
-            zero_division=0
-        )
-    )
-
-    cm = confusion_matrix(
-        y_true,
-        y_pred,
-        labels=labels_range
-    )
-
-    plt.figure(figsize=(12, 10))
+def save_confusion_matrix(cm, class_names, save_path):
+    plt.figure(figsize=(7, 6))
 
     sns.heatmap(
         cm,
@@ -863,67 +397,269 @@ def evaluate_model(
         yticklabels=class_names
     )
 
-    plt.title("Confusion Matrix")
-
     plt.xlabel("Predicted Label")
-
     plt.ylabel("True Label")
-
-    plt.xticks(
-        rotation=45,
-        ha="right"
-    )
-
-    plt.yticks(rotation=0)
-
+    plt.title("Confusion Matrix")
     plt.tight_layout()
-
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.show(block=False)
-
     plt.pause(0.1)
 
-    return (
-        val_loss,
-        val_acc,
-        y_true,
-        y_pred
-    )
 
+save_confusion_matrix(cm, class_names, CONFUSION_MATRIX_PATH)
 
-val_loss, val_acc, y_true, y_pred = evaluate_model(
-    model,
-    val_ds,
-    class_names
-)
+print("\nClassification Report:")
+print(report_text)
 
-
-# ============================================================
-# 19. SAVE MODEL
-# ============================================================
+# =========================================================
+# 13. SAVE MODEL
+# =========================================================
 
 model.save(str(FINAL_MODEL_PATH))
 
-print("\n" + "=" * 80)
-print("TRAINING SELESAI")
-print("=" * 80)
+# =========================================================
+# 14. EXPORT TXT JURNAL-FRIENDLY
+# =========================================================
 
-print(
-    f"Best model tersimpan di : "
-    f"{BEST_MODEL_PATH}"
-)
+def export_journal_friendly_report():
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-print(
-    f"Final model tersimpan di: "
-    f"{FINAL_MODEL_PATH}"
-)
+    total_params = model.count_params()
+    trainable_params = int(np.sum([tf.keras.backend.count_params(w) for w in model.trainable_weights]))
+    non_trainable_params = int(np.sum([tf.keras.backend.count_params(w) for w in model.non_trainable_weights]))
 
-print(
-    f"Final validation accuracy: "
-    f"{val_acc * 100:.2f}%"
-)
+    final_train_acc = history.history["accuracy"][-1]
+    final_train_loss = history.history["loss"][-1]
+    final_val_acc = report_dict["accuracy"]
 
-print(
-    "\nTutup semua jendela grafik untuk keluar."
-)
+    best_val_acc_phase_1 = max(history.history["val_accuracy"])
+    best_val_acc_phase_2 = max(fine_tune_history.history["val_accuracy"])
+
+    tn, fp, fn, tp = cm.ravel()
+
+    with open(REPORT_TXT_PATH, "w", encoding="utf-8") as f:
+        f.write("JOURNAL-FRIENDLY TRAINING REPORT\n")
+        f.write("================================\n\n")
+
+        f.write("1. Experiment Information\n")
+        f.write("-------------------------\n")
+        f.write(f"Report generated at       : {now}\n")
+        f.write(f"Python version            : {platform.python_version()}\n")
+        f.write(f"TensorFlow version        : {tf.__version__}\n")
+        f.write(f"Random seed               : {SEED}\n\n")
+
+        f.write("2. Dataset Description\n")
+        f.write("----------------------\n")
+        f.write("Dataset name              : Tomato Binary Dataset\n")
+        f.write("Dataset task              : Binary image classification\n")
+        f.write("Classes                   : diseased, healthy\n")
+        f.write(f"Dataset directory         : {base_dir.resolve()}\n")
+        f.write(f"Total images              : {total_dataset}\n")
+        f.write(f"Total diseased images     : {total_diseased}\n")
+        f.write(f"Total healthy images      : {total_healthy}\n")
+        f.write("Dataset construction      : Original tomato leaf disease classes were grouped into a single 'diseased' class, while the healthy tomato leaf class was assigned to the 'healthy' class.\n")
+        f.write("Class balancing strategy  : The dataset was balanced to contain an equal number of images for each class.\n\n")
+
+        f.write("3. Train-Validation Split\n")
+        f.write("-------------------------\n")
+        f.write("Split method              : Stratified train-validation split\n")
+        f.write(f"Validation ratio          : {VALIDATION_SPLIT}\n")
+        f.write(f"Training images           : {len(train_labels)}\n")
+        f.write(f"Training diseased images  : {train_diseased}\n")
+        f.write(f"Training healthy images   : {train_healthy}\n")
+        f.write(f"Validation images         : {len(val_labels)}\n")
+        f.write(f"Validation diseased images: {val_diseased}\n")
+        f.write(f"Validation healthy images : {val_healthy}\n\n")
+
+        f.write("4. Image Preprocessing\n")
+        f.write("----------------------\n")
+        f.write(f"Input image size          : {IMAGE_SIZE[0]} x {IMAGE_SIZE[1]} pixels\n")
+        f.write(f"Batch size                : {BATCH_SIZE}\n")
+        f.write("Color format              : RGB\n")
+        f.write("Image resizing            : TensorFlow resize operation\n")
+        f.write("Preprocessing note        : MobileNetV3 in Keras uses internal preprocessing by default when include_preprocessing=True.\n\n")
+
+        f.write("5. Data Augmentation\n")
+        f.write("--------------------\n")
+        f.write("Augmentation applied      : Yes\n")
+        f.write("Augmentation stage        : Training pipeline only\n")
+        f.write("Augmentation techniques   :\n")
+        f.write("- Random horizontal flip\n")
+        f.write("- Random rotation with factor 0.05\n")
+        f.write("- Random zoom with factor 0.05\n")
+        f.write("- Random contrast with factor 0.05\n\n")
+
+        f.write("6. Model Architecture\n")
+        f.write("---------------------\n")
+        f.write(f"Base model                : {BASE_MODEL_NAME}\n")
+        f.write(f"Pretrained weights        : {TRANSFER_LEARNING_WEIGHTS}\n")
+        f.write("Include top               : False\n")
+        f.write("Pooling layer             : GlobalAveragePooling2D\n")
+        f.write("Classifier head           : BatchNormalization -> Dense(128, ReLU, L2=1e-4) -> BatchNormalization -> Dropout(0.4) -> Dense(1, Sigmoid)\n")
+        f.write("Output activation         : Sigmoid\n")
+        f.write("Classification type       : Binary classification\n")
+        f.write(f"Total parameters          : {total_params}\n")
+        f.write(f"Trainable parameters      : {trainable_params}\n")
+        f.write(f"Non-trainable parameters  : {non_trainable_params}\n\n")
+        
+        f.write("6A. Model Flow Diagram\n")
+        f.write("----------------------\n")
+        f.write("The proposed binary classification model follows the architecture flow below:\n\n")
+
+        f.write("+-----------------------------+\n")
+        f.write("| Input Image                 |\n")
+        f.write("| 300 x 300 x 3 RGB           |\n")
+        f.write("+-------------+---------------+\n")
+        f.write("              |\n")
+        f.write("              v\n")
+        f.write("+-----------------------------+\n")
+        f.write("| Data Augmentation           |\n")
+        f.write("| - Random horizontal flip    |\n")
+        f.write("| - Random rotation           |\n")
+        f.write("| - Random zoom               |\n")
+        f.write("| - Random contrast           |\n")
+        f.write("+-------------+---------------+\n")
+        f.write("              |\n")
+        f.write("              v\n")
+        f.write("+-----------------------------+\n")
+        f.write("| MobileNetV3Large Backbone   |\n")
+        f.write("| Pretrained on ImageNet      |\n")
+        f.write("| include_top = False         |\n")
+        f.write("+-------------+---------------+\n")
+        f.write("              |\n")
+        f.write("              v\n")
+        f.write("+-----------------------------+\n")
+        f.write("| GlobalAveragePooling2D      |\n")
+        f.write("+-------------+---------------+\n")
+        f.write("              |\n")
+        f.write("              v\n")
+        f.write("+-----------------------------+\n")
+        f.write("| BatchNormalization          |\n")
+        f.write("+-------------+---------------+\n")
+        f.write("              |\n")
+        f.write("              v\n")
+        f.write("+-----------------------------+\n")
+        f.write("| Dense Layer                 |\n")
+        f.write("| 128 neurons, ReLU           |\n")
+        f.write("| L2 regularization = 1e-4    |\n")
+        f.write("+-------------+---------------+\n")
+        f.write("              |\n")
+        f.write("              v\n")
+        f.write("+-----------------------------+\n")
+        f.write("| BatchNormalization          |\n")
+        f.write("+-------------+---------------+\n")
+        f.write("              |\n")
+        f.write("              v\n")
+        f.write("+-----------------------------+\n")
+        f.write("| Dropout                     |\n")
+        f.write("| rate = 0.4                  |\n")
+        f.write("+-------------+---------------+\n")
+        f.write("              |\n")
+        f.write("              v\n")
+        f.write("+-----------------------------+\n")
+        f.write("| Output Layer                |\n")
+        f.write("| Dense(1), Sigmoid           |\n")
+        f.write("+-------------+---------------+\n")
+        f.write("              |\n")
+        f.write("              v\n")
+        f.write("+-----------------------------+\n")
+        f.write("| Prediction Output           |\n")
+        f.write("| 0 = Diseased                |\n")
+        f.write("| 1 = Healthy                 |\n")
+        f.write("| threshold = 0.5             |\n")
+        f.write("+-----------------------------+\n\n")
+
+        f.write("7. Training Configuration\n")
+        f.write("-------------------------\n")
+        f.write("Loss function             : Binary Crossentropy\n")
+        f.write(f"Label smoothing           : {LABEL_SMOOTHING}\n")
+        f.write("Optimizer phase 1         : Adam\n")
+        f.write(f"Learning rate phase 1     : {PHASE_1_LEARNING_RATE}\n")
+        f.write(f"Epochs phase 1            : {PHASE_1_EPOCHS}\n")
+        f.write(f"Early stopping phase 1    : patience={PHASE_1_PATIENCE}, monitor=val_accuracy\n")
+        f.write("Optimizer phase 2         : Adam\n")
+        f.write(f"Learning rate phase 2     : {PHASE_2_LEARNING_RATE}\n")
+        f.write(f"Epochs phase 2            : {PHASE_2_EPOCHS}\n")
+        f.write(f"Fine-tuned layers         : Last {UNFROZEN_LAST_LAYERS} layers of the base model\n")
+        f.write("BatchNormalization layers : Frozen during fine-tuning\n")
+        f.write(f"Early stopping phase 2    : patience={PHASE_2_PATIENCE}, monitor=val_accuracy\n")
+        f.write("Learning rate scheduler   : ReduceLROnPlateau, factor=0.2, patience=3, min_lr=1e-6\n\n")
+
+        f.write("8. Evaluation Metrics\n")
+        f.write("---------------------\n")
+        f.write("Metrics used              : Accuracy, Precision, Recall, AUC, F1-score\n")
+        f.write("Decision threshold        : 0.5\n")
+        f.write("Evaluation set            : Validation set\n\n")
+
+        f.write("9. Final Classification Report\n")
+        f.write("------------------------------\n")
+        f.write(report_text)
+        f.write("\n\n")
+
+        f.write("10. Confusion Matrix\n")
+        f.write("--------------------\n")
+        f.write("Class order               : diseased, healthy\n")
+        f.write("Matrix format             : rows=true labels, columns=predicted labels\n\n")
+        f.write(str(cm))
+        f.write("\n\n")
+        f.write(f"True Diseased predicted Diseased : {tn}\n")
+        f.write(f"True Diseased predicted Healthy  : {fp}\n")
+        f.write(f"True Healthy predicted Diseased  : {fn}\n")
+        f.write(f"True Healthy predicted Healthy   : {tp}\n\n")
+
+        f.write("11. Final Training Summary\n")
+        f.write("--------------------------\n")
+        f.write(f"Final training accuracy   : {final_train_acc:.4f}\n")
+        f.write(f"Final training loss       : {final_train_loss:.4f}\n")
+        f.write(f"Final validation accuracy : {final_val_acc:.4f}\n")
+        f.write(f"Best val accuracy phase 1 : {best_val_acc_phase_1:.4f}\n")
+        f.write(f"Best val accuracy phase 2 : {best_val_acc_phase_2:.4f}\n\n")
+
+        f.write("12. Saved Outputs\n")
+        f.write("-----------------\n")
+        f.write(f"Best model path           : {BEST_MODEL_PATH.resolve()}\n")
+        f.write(f"Final model path          : {FINAL_MODEL_PATH.resolve()}\n")
+        f.write(f"Training curve image      : {TRAINING_CURVE_PATH.resolve()}\n")
+        f.write(f"Confusion matrix image    : {CONFUSION_MATRIX_PATH.resolve()}\n")
+        f.write(f"Text report path          : {REPORT_TXT_PATH.resolve()}\n\n")
+
+        f.write("13. Suggested Journal Method Description\n")
+        f.write("----------------------------------------\n")
+        f.write(
+            "This study performed binary classification of tomato leaf images into diseased and healthy classes. "
+            "The dataset consisted of 6,000 images, with 3,000 images assigned to each class. "
+            "A stratified train-validation split was applied with an 80:20 ratio, resulting in 4,800 training images "
+            "and 1,200 validation images. The validation set contained 600 diseased and 600 healthy images. "
+            "Images were resized to 300 x 300 pixels and processed using a TensorFlow data pipeline. "
+            "Data augmentation, including random horizontal flipping, rotation, zooming, and contrast adjustment, "
+            "was applied during training to improve generalization. The model used MobileNetV3Large pretrained on ImageNet "
+            "as the feature extractor, followed by a custom classifier head consisting of global average pooling, "
+            "batch normalization, dense, dropout, and sigmoid output layers. Training was conducted in two phases: "
+            "first, only the classifier head was trained while the base model was frozen; second, the last 50 layers "
+            "of the base model were fine-tuned with a lower learning rate. The model was optimized using Adam and "
+            "binary cross-entropy loss. Performance was evaluated using accuracy, precision, recall, F1-score, AUC, "
+            "and confusion matrix analysis."
+        )
+        f.write("\n\n")
+
+        f.write("14. Important Methodological Note\n")
+        f.write("---------------------------------\n")
+        f.write(
+            "If augmented images were generated before splitting the dataset, there is a possibility that visually similar "
+            "augmented variants of the same original image may appear in both training and validation sets. "
+            "For stricter experimental validity, the recommended approach is to split the original images first and "
+            "apply augmentation only to the training subset."
+        )
+        f.write("\n")
+
+
+export_journal_friendly_report()
+
+print("\nTraining selesai.")
+print(f"Best model saved to          : {BEST_MODEL_PATH}")
+print(f"Final model saved to         : {FINAL_MODEL_PATH}")
+print(f"Training curve saved to      : {TRAINING_CURVE_PATH}")
+print(f"Confusion matrix saved to    : {CONFUSION_MATRIX_PATH}")
+print(f"Journal-friendly TXT saved to: {REPORT_TXT_PATH}")
 
 plt.show()
