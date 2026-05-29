@@ -26,3 +26,4 @@ ML/HOG/Opt/hog_svm_opt_outputs/hog_svm_opt_model.joblib
 ML/LogisticRegression/Opt/hsv_logistic_regression_opt_outputs/hsv_logistic_regression_opt_model.joblib
 ML/docs
 docs
+ML/RandomForest/Opt/lbp_random_forest_opt_outputs/lbp_random_forest_opt_model.joblib
