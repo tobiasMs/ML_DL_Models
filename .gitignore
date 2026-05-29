@@ -22,3 +22,7 @@
 /ML/LogisticRegression/Base/hsv_logistic_regression_base_outputs/hsv_logistic_regression_base_model.joblib
 /ML/HOG/Base/hog_svm_base_outputs/hog_svm_base_model.joblib
 /ML/DecissionTree/
+ML/HOG/Opt/hog_svm_opt_outputs/hog_svm_opt_model.joblib
+ML/LogisticRegression/Opt/hsv_logistic_regression_opt_outputs/hsv_logistic_regression_opt_model.joblib
+ML/docs
+docs

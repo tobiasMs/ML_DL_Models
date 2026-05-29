@@ -1,4 +1,3 @@
-import os
 import cv2
 import datetime
 import platform
@@ -7,18 +6,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from pathlib import Path
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
     classification_report,
     ConfusionMatrixDisplay
 )
-
-from skimage.feature import hog
 
 
 # =========================================================
@@ -32,7 +29,7 @@ IMAGE_SIZE = (300, 300)
 SEED = 123
 VALIDATION_SPLIT = 0.2
 
-MODEL_NAME = "HOG + Decision Tree"
+MODEL_NAME = "Optimized HSV + Logistic Regression"
 
 class_names = ["diseased", "healthy"]
 
@@ -43,12 +40,12 @@ class_to_label = {
 
 valid_ext = [".jpg", ".jpeg", ".png"]
 
-OUTPUT_DIR = BASE_DIR / "decision_tree_base_outputs"
+OUTPUT_DIR = BASE_DIR / "hsv_logistic_regression_opt_outputs"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-MODEL_PATH = OUTPUT_DIR / "decision_tree_base_model.joblib"
-REPORT_TXT_PATH = OUTPUT_DIR / "decision_tree_base_report.txt"
-CONFUSION_MATRIX_PATH = OUTPUT_DIR / "decision_tree_confusion_matrix.png"
+MODEL_PATH = OUTPUT_DIR / "hsv_logistic_regression_opt_model.joblib"
+REPORT_TXT_PATH = OUTPUT_DIR / "hsv_logistic_regression_opt_report.txt"
+CONFUSION_MATRIX_PATH = OUTPUT_DIR / "hsv_logistic_regression_confusion_matrix.png"
 
 np.random.seed(SEED)
 
@@ -124,40 +121,28 @@ def load_image(path):
         raise ValueError(f"Gagal membaca gambar: {path}")
 
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-    image = cv2.resize(
-        image,
-        IMAGE_SIZE
-    )
+    image = cv2.resize(image, IMAGE_SIZE)
 
     return image
 
 
 # =========================================================
 # 5. DATA AUGMENTATION
-# Same concept as deep learning:
-# one image remains one training sample
 # =========================================================
 
 def augment_image(image):
     augmented = image.copy()
 
-    # Random horizontal flip
     if np.random.rand() < 0.5:
         augmented = cv2.flip(augmented, 1)
 
-    # Random rotation, similar to RandomRotation(0.05)
     if np.random.rand() < 0.5:
         angle = np.random.uniform(-18, 18)
 
         h, w = augmented.shape[:2]
         center = (w // 2, h // 2)
 
-        matrix = cv2.getRotationMatrix2D(
-            center,
-            angle,
-            1.0
-        )
+        matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
 
         augmented = cv2.warpAffine(
             augmented,
@@ -166,12 +151,10 @@ def augment_image(image):
             borderMode=cv2.BORDER_REFLECT
         )
 
-    # Random zoom, similar to RandomZoom(0.05)
     if np.random.rand() < 0.5:
         zoom_factor = np.random.uniform(1.0, 1.05)
 
         h, w = augmented.shape[:2]
-
         new_h = int(h / zoom_factor)
         new_w = int(w / zoom_factor)
 
@@ -183,12 +166,8 @@ def augment_image(image):
             start_x:start_x + new_w
         ]
 
-        augmented = cv2.resize(
-            cropped,
-            (w, h)
-        )
+        augmented = cv2.resize(cropped, (w, h))
 
-    # Random contrast, similar to RandomContrast(0.05)
     if np.random.rand() < 0.5:
         alpha = np.random.uniform(0.95, 1.05)
 
@@ -230,10 +209,10 @@ def visualize_augmentation(paths, labels):
         plt.title("After Augmentation")
         plt.axis("off")
 
-    plt.suptitle("Sample Data Augmentation Before vs After")
+    plt.suptitle("Sample Data Augmentation Before vs After (Opt)")
     plt.tight_layout()
 
-    augmentation_path = OUTPUT_DIR / "decision_tree_augmentation_sample.png"
+    augmentation_path = OUTPUT_DIR / "hsv_logistic_regression_augmentation_sample.png"
 
     plt.savefig(
         augmentation_path,
@@ -254,25 +233,49 @@ augmentation_path = visualize_augmentation(
 
 
 # =========================================================
-# 7. HOG FEATURE EXTRACTION
+# 7. HSV COLOR HISTOGRAM FEATURE EXTRACTION
 # =========================================================
 
-def extract_hog_features(image):
-    gray = cv2.cvtColor(
+def extract_hsv_hist_features(image):
+    hsv = cv2.cvtColor(
         image,
-        cv2.COLOR_RGB2GRAY
+        cv2.COLOR_RGB2HSV
     )
 
-    features = hog(
-        gray,
-        orientations=9,
-        pixels_per_cell=(16, 16),
-        cells_per_block=(2, 2),
-        block_norm="L2-Hys",
-        feature_vector=True
+    hist_h = cv2.calcHist(
+        [hsv],
+        [0],
+        None,
+        [32],
+        [0, 180]
     )
 
-    return features
+    hist_s = cv2.calcHist(
+        [hsv],
+        [1],
+        None,
+        [32],
+        [0, 256]
+    )
+
+    hist_v = cv2.calcHist(
+        [hsv],
+        [2],
+        None,
+        [32],
+        [0, 256]
+    )
+
+    hist = np.concatenate([
+        hist_h.flatten(),
+        hist_s.flatten(),
+        hist_v.flatten()
+    ])
+
+    hist = hist.astype("float")
+    hist /= (hist.sum() + 1e-7)
+
+    return hist
 
 
 def build_feature_dataset(paths, labels, augment=False):
@@ -287,7 +290,7 @@ def build_feature_dataset(paths, labels, augment=False):
         if augment:
             image = augment_image(image)
 
-        features = extract_hog_features(image)
+        features = extract_hsv_hist_features(image)
 
         X.append(features)
         y.append(label)
@@ -322,26 +325,47 @@ print(f"Val feature shape  : {X_val.shape}")
 
 
 # =========================================================
-# 9. MODEL TRAINING
+# 9. MODEL OPTIMIZATION (GridSearchCV)
 # =========================================================
 
-model = Pipeline([
+pipeline = Pipeline([
     ("scaler", StandardScaler()),
-    ("classifier", DecisionTreeClassifier(
+    ("classifier", LogisticRegression(
+        max_iter=2000,
         random_state=SEED
     ))
 ])
 
-print("\nTraining HOG + Decision Tree model...")
-model.fit(X_train, y_train)
-print("Training completed.")
+param_grid = {
+    'classifier__C': [0.1, 1, 10],
+    'classifier__solver': ['lbfgs', 'liblinear'],
+    'classifier__penalty': ['l2']
+}
+
+print("\nStarting Hyperparameter Optimization with GridSearchCV...")
+grid_search = GridSearchCV(
+    estimator=pipeline,
+    param_grid=param_grid,
+    cv=5,
+    scoring='accuracy',
+    verbose=2,
+    n_jobs=-1
+)
+
+grid_search.fit(X_train, y_train)
+
+print("\nOptimization completed.")
+print(f"Best parameters: {grid_search.best_params_}")
+print(f"Best cross-validation score: {grid_search.best_score_:.4f}")
+
+model = grid_search.best_estimator_
 
 
 # =========================================================
 # 10. MODEL EVALUATION
 # =========================================================
 
-print("\nEvaluating model...")
+print("\nEvaluating best model on validation set...")
 
 y_pred = model.predict(X_val)
 
@@ -380,7 +404,7 @@ disp.plot(
     values_format="d"
 )
 
-plt.title("Confusion Matrix - HOG + Decision Tree")
+plt.title(f"Confusion Matrix - {MODEL_NAME}")
 plt.tight_layout()
 
 plt.savefig(
@@ -413,8 +437,8 @@ def export_report():
     )
 
     with open(REPORT_TXT_PATH, "w", encoding="utf-8") as f:
-        f.write("JOURNAL-FRIENDLY BASE MACHINE LEARNING REPORT\n")
-        f.write("============================================\n\n")
+        f.write("JOURNAL-FRIENDLY OPTIMIZED MACHINE LEARNING REPORT\n")
+        f.write("==================================================\n\n")
 
         f.write("1. Experiment Information\n")
         f.write("-------------------------\n")
@@ -460,11 +484,15 @@ def export_report():
         f.write("- Random zoom\n")
         f.write("- Random contrast\n\n")
 
-        f.write("6. Machine Learning Model\n")
-        f.write("-------------------------\n")
+        f.write("6. Machine Learning Model & Optimization\n")
+        f.write("----------------------------------------\n")
         f.write(f"Model                     : {MODEL_NAME}\n")
-        f.write("Feature extraction        : Histogram of Oriented Gradients (HOG)\n")
-        f.write("Classifier                : Decision Tree\n\n")
+        f.write("Feature extraction        : HSV color histogram\n")
+        f.write("Classifier                : Logistic Regression\n")
+        f.write("Optimization Method       : GridSearchCV (5-fold CV)\n")
+        f.write(f"Parameter Grid            : {param_grid}\n")
+        f.write(f"Best Parameters Found     : {grid_search.best_params_}\n")
+        f.write(f"Best CV Accuracy          : {grid_search.best_score_:.4f}\n\n")
 
         f.write("7. Feature Dataset Shape\n")
         f.write("------------------------\n")
@@ -475,8 +503,8 @@ def export_report():
         f.write("---------------------\n")
         f.write("Metrics used              : Accuracy, Precision, Recall, F1-score, Confusion Matrix\n\n")
 
-        f.write("9. Final Classification Report\n")
-        f.write("------------------------------\n")
+        f.write("9. Final Classification Report (Best Model)\n")
+        f.write("-------------------------------------------\n")
         f.write(report_text)
         f.write("\n\n")
 
@@ -500,7 +528,8 @@ def export_report():
 export_report()
 
 
-print("\nBase ML HOG + Decision Tree training completed.")
+print(f"\n{MODEL_NAME} training completed.")
+print(f"Best Parameters            : {grid_search.best_params_}")
 print(f"Model saved to             : {MODEL_PATH}")
 print(f"Confusion matrix saved to  : {CONFUSION_MATRIX_PATH}")
 print(f"Report saved to            : {REPORT_TXT_PATH}")
