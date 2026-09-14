@@ -1,3 +1,4 @@
+import os
 import cv2
 import datetime
 import platform
@@ -7,15 +8,15 @@ import matplotlib.pyplot as plt
 
 from pathlib import Path
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.svm import SVC
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
     classification_report,
     ConfusionMatrixDisplay
 )
-
-from skimage.feature import local_binary_pattern
 
 
 # =========================================================
@@ -29,7 +30,7 @@ IMAGE_SIZE = (300, 300)
 SEED = 123
 VALIDATION_SPLIT = 0.2
 
-MODEL_NAME = "LBP + Random Forest"
+MODEL_NAME = "HSV Color Histogram + SVM"
 
 class_names = ["diseased", "healthy"]
 
@@ -40,12 +41,12 @@ class_to_label = {
 
 valid_ext = [".jpg", ".jpeg", ".png"]
 
-OUTPUT_DIR = BASE_DIR / "lbp_random_forest_base_outputs"
+OUTPUT_DIR = BASE_DIR / "hsv_svm_base_outputs"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-MODEL_PATH = OUTPUT_DIR / "lbp_random_forest_base_model.joblib"
-REPORT_TXT_PATH = OUTPUT_DIR / "lbp_random_forest_base_report.txt"
-CONFUSION_MATRIX_PATH = OUTPUT_DIR / "lbp_random_forest_confusion_matrix.png"
+MODEL_PATH = OUTPUT_DIR / "hsv_svm_base_model.joblib"
+REPORT_TXT_PATH = OUTPUT_DIR / "hsv_svm_base_report.txt"
+CONFUSION_MATRIX_PATH = OUTPUT_DIR / "hsv_svm_confusion_matrix.png"
 
 np.random.seed(SEED)
 
@@ -128,15 +129,16 @@ def load_image(path):
 
 # =========================================================
 # 5. DATA AUGMENTATION
-# One image remains one sample
 # =========================================================
 
 def augment_image(image):
     augmented = image.copy()
 
+    # Random horizontal flip
     if np.random.rand() < 0.5:
         augmented = cv2.flip(augmented, 1)
 
+    # Random rotation
     if np.random.rand() < 0.5:
         angle = np.random.uniform(-18, 18)
 
@@ -152,10 +154,12 @@ def augment_image(image):
             borderMode=cv2.BORDER_REFLECT
         )
 
+    # Random zoom
     if np.random.rand() < 0.5:
         zoom_factor = np.random.uniform(1.0, 1.05)
 
         h, w = augmented.shape[:2]
+
         new_h = int(h / zoom_factor)
         new_w = int(w / zoom_factor)
 
@@ -169,6 +173,7 @@ def augment_image(image):
 
         augmented = cv2.resize(cropped, (w, h))
 
+    # Random contrast
     if np.random.rand() < 0.5:
         alpha = np.random.uniform(0.95, 1.05)
 
@@ -213,7 +218,7 @@ def visualize_augmentation(paths, labels):
     plt.suptitle("Sample Data Augmentation Before vs After")
     plt.tight_layout()
 
-    augmentation_path = OUTPUT_DIR / "lbp_random_forest_augmentation_sample.png"
+    augmentation_path = OUTPUT_DIR / "hsv_svm_augmentation_sample.png"
 
     plt.savefig(
         augmentation_path,
@@ -234,30 +239,44 @@ augmentation_path = visualize_augmentation(
 
 
 # =========================================================
-# 7. LBP FEATURE EXTRACTION
+# 7. HSV COLOR HISTOGRAM FEATURE EXTRACTION
 # =========================================================
 
-def extract_lbp_features(image):
-    gray = cv2.cvtColor(
+def extract_hsv_hist_features(image):
+    hsv = cv2.cvtColor(
         image,
-        cv2.COLOR_RGB2GRAY
+        cv2.COLOR_RGB2HSV
     )
 
-    radius = 3
-    n_points = 8 * radius
-
-    lbp = local_binary_pattern(
-        gray,
-        n_points,
-        radius,
-        method="uniform"
+    hist_h = cv2.calcHist(
+        [hsv],
+        [0],
+        None,
+        [32],
+        [0, 180]
     )
 
-    hist, _ = np.histogram(
-        lbp.ravel(),
-        bins=np.arange(0, n_points + 3),
-        range=(0, n_points + 2)
+    hist_s = cv2.calcHist(
+        [hsv],
+        [1],
+        None,
+        [32],
+        [0, 256]
     )
+
+    hist_v = cv2.calcHist(
+        [hsv],
+        [2],
+        None,
+        [32],
+        [0, 256]
+    )
+
+    hist = np.concatenate([
+        hist_h.flatten(),
+        hist_s.flatten(),
+        hist_v.flatten()
+    ])
 
     hist = hist.astype("float")
     hist /= (hist.sum() + 1e-7)
@@ -277,7 +296,7 @@ def build_feature_dataset(paths, labels, augment=False):
         if augment:
             image = augment_image(image)
 
-        features = extract_lbp_features(image)
+        features = extract_hsv_hist_features(image)
 
         X.append(features)
         y.append(label)
@@ -315,14 +334,19 @@ print(f"Val feature shape  : {X_val.shape}")
 # 9. MODEL TRAINING
 # =========================================================
 
-model = RandomForestClassifier(
-    n_estimators=200,
-    max_depth=None,
-    random_state=SEED,
-    n_jobs=-1
-)
+model = Pipeline([
+    ("scaler", StandardScaler()),
+    ("classifier", SVC(
+        kernel="rbf",
+        C=1.0,
+        gamma="scale",
+        probability=True,
+        random_state=SEED,
+        verbose=True
+    ))
+])
 
-print("\nTraining LBP + Random Forest model...")
+print("\nTraining HSV + SVM model...")
 model.fit(X_train, y_train)
 print("Training completed.")
 
@@ -370,7 +394,7 @@ disp.plot(
     values_format="d"
 )
 
-plt.title("Confusion Matrix - LBP + Random Forest")
+plt.title("Confusion Matrix - HSV Color Histogram + SVM")
 plt.tight_layout()
 
 plt.savefig(
@@ -453,10 +477,13 @@ def export_report():
         f.write("6. Machine Learning Model\n")
         f.write("-------------------------\n")
         f.write(f"Model                     : {MODEL_NAME}\n")
-        f.write("Feature extraction        : Local Binary Pattern (LBP)\n")
-        f.write("Classifier                : Random Forest\n")
-        f.write("Number of estimators      : 200\n")
-        f.write("Max depth                 : None\n\n")
+        f.write("Feature extraction        : HSV color histogram\n")
+        f.write("Classifier                : Support Vector Machine (SVM)\n")
+        f.write("Kernel                    : RBF\n")
+        f.write("C                         : 1.0\n")
+        f.write("Gamma                     : scale\n")
+        f.write("Histogram bins            : H=32, S=32, V=32\n")
+        f.write("Total feature dimensions  : 96\n\n")
 
         f.write("7. Feature Dataset Shape\n")
         f.write("------------------------\n")
@@ -491,7 +518,7 @@ def export_report():
 
 export_report()
 
-print("\nBase ML LBP + Random Forest training completed.")
+print(f"\nBase ML {MODEL_NAME} training completed.")
 print(f"Model saved to             : {MODEL_PATH}")
 print(f"Confusion matrix saved to  : {CONFUSION_MATRIX_PATH}")
 print(f"Report saved to            : {REPORT_TXT_PATH}")

@@ -30,6 +30,7 @@ LATENCY_RUNS = 100
 # ─────────────────────────────────────────────────────────────────────────────
 
 ML_MODELS = [
+    # ── HOG ──────────────────────────────────────────────────────────────────
     {
         "name": "HOG + SVM",
         "variant": "Base",
@@ -45,32 +46,118 @@ ML_MODELS = [
         "report": BASE / "ML/HOG/Opt/hog_svm_opt_outputs/hog_svm_opt_report.txt",
     },
     {
-        "name": "LBP + Random Forest",
+        "name": "HOG + Logistic Regression",
         "variant": "Base",
-        "path": BASE / "ML/RandomForest/Base/lbp_random_forest_base_outputs/lbp_random_forest_base_model.joblib",
-        "feature": "LBP",
-        "report": BASE / "ML/RandomForest/Base/lbp_random_forest_base_outputs/lbp_random_forest_base_report.txt",
+        "path": BASE / "ML/HOG/Base/hog_logistic_regression_base_outputs/hog_logistic_regression_base_model.joblib",
+        "feature": "HOG",
+        "report": BASE / "ML/HOG/Base/hog_logistic_regression_base_outputs/hog_logistic_regression_base_report.txt",
     },
     {
-        "name": "LBP + Random Forest",
+        "name": "HOG + Logistic Regression",
         "variant": "Opt",
-        "path": BASE / "ML/RandomForest/Opt/lbp_random_forest_opt_outputs/lbp_random_forest_opt_model.joblib",
-        "feature": "LBP",
-        "report": BASE / "ML/RandomForest/Opt/lbp_random_forest_opt_outputs/lbp_random_forest_opt_report.txt",
+        "path": BASE / "ML/HOG/Opt/hog_logistic_regression_opt_outputs/hog_logistic_regression_opt_model.joblib",
+        "feature": "HOG",
+        "report": BASE / "ML/HOG/Opt/hog_logistic_regression_opt_outputs/hog_logistic_regression_opt_report.txt",
+    },
+    {
+        "name": "HOG + Random Forest",
+        "variant": "Base",
+        "path": BASE / "ML/HOG/Base/hog_random_forest_base_outputs/hog_random_forest_base_model.joblib",
+        "feature": "HOG",
+        "report": BASE / "ML/HOG/Base/hog_random_forest_base_outputs/hog_random_forest_base_report.txt",
+    },
+    {
+        "name": "HOG + Random Forest",
+        "variant": "Opt",
+        "path": BASE / "ML/HOG/Opt/hog_random_forest_opt_outputs/hog_random_forest_opt_model.joblib",
+        "feature": "HOG",
+        "report": BASE / "ML/HOG/Opt/hog_random_forest_opt_outputs/hog_random_forest_opt_report.txt",
+    },
+    # ── HSV ──────────────────────────────────────────────────────────────────
+    {
+        "name": "HSV + SVM",
+        "variant": "Base",
+        "path": BASE / "ML/HSV/Base/hsv_svm_base_outputs/hsv_svm_base_model.joblib",
+        "feature": "HSV",
+        "report": BASE / "ML/HSV/Base/hsv_svm_base_outputs/hsv_svm_base_report.txt",
+    },
+    {
+        "name": "HSV + SVM",
+        "variant": "Opt",
+        "path": BASE / "ML/HSV/Opt/hsv_svm_opt_outputs/hsv_svm_opt_model.joblib",
+        "feature": "HSV",
+        "report": BASE / "ML/HSV/Opt/hsv_svm_opt_outputs/hsv_svm_opt_report.txt",
     },
     {
         "name": "HSV Histogram + Logistic Regression",
         "variant": "Base",
-        "path": BASE / "ML/LogisticRegression/Base/hsv_logistic_regression_base_outputs/hsv_logistic_regression_base_model.joblib",
+        "path": BASE / "ML/HSV/Base/hsv_logistic_regression_base_outputs/hsv_logistic_regression_base_model.joblib",
         "feature": "HSV",
-        "report": BASE / "ML/LogisticRegression/Base/hsv_logistic_regression_base_outputs/hsv_logistic_regression_base_report.txt",
+        "report": BASE / "ML/HSV/Base/hsv_logistic_regression_base_outputs/hsv_logistic_regression_base_report.txt",
     },
     {
         "name": "HSV Histogram + Logistic Regression",
         "variant": "Opt",
-        "path": BASE / "ML/LogisticRegression/Opt/hsv_logistic_regression_opt_outputs/hsv_logistic_regression_opt_model.joblib",
+        "path": BASE / "ML/HSV/Opt/hsv_logistic_regression_opt_outputs/hsv_logistic_regression_opt_model.joblib",
         "feature": "HSV",
-        "report": BASE / "ML/LogisticRegression/Opt/hsv_logistic_regression_opt_outputs/hsv_logistic_regression_opt_report.txt",
+        "report": BASE / "ML/HSV/Opt/hsv_logistic_regression_opt_outputs/hsv_logistic_regression_opt_report.txt",
+    },
+    {
+        "name": "HSV + Random Forest",
+        "variant": "Base",
+        "path": BASE / "ML/HSV/Base/hsv_random_forest_base_outputs/hsv_random_forest_base_model.joblib",
+        "feature": "HSV",
+        "report": BASE / "ML/HSV/Base/hsv_random_forest_base_outputs/hsv_random_forest_base_report.txt",
+    },
+    {
+        "name": "HSV + Random Forest",
+        "variant": "Opt",
+        "path": BASE / "ML/HSV/Opt/hsv_random_forest_opt_outputs/hsv_random_forest_opt_model.joblib",
+        "feature": "HSV",
+        "report": BASE / "ML/HSV/Opt/hsv_random_forest_opt_outputs/hsv_random_forest_opt_report.txt",
+    },
+    # ── LBP ──────────────────────────────────────────────────────────────────
+    {
+        "name": "LBP + SVM",
+        "variant": "Base",
+        "path": BASE / "ML/LBP/Base/lbp_svm_base_outputs/lbp_svm_base_model.joblib",
+        "feature": "LBP",
+        "report": BASE / "ML/LBP/Base/lbp_svm_base_outputs/lbp_svm_base_report.txt",
+    },
+    {
+        "name": "LBP + SVM",
+        "variant": "Opt",
+        "path": BASE / "ML/LBP/Opt/lbp_svm_opt_outputs/lbp_svm_opt_model.joblib",
+        "feature": "LBP",
+        "report": BASE / "ML/LBP/Opt/lbp_svm_opt_outputs/lbp_svm_opt_report.txt",
+    },
+    {
+        "name": "LBP + Logistic Regression",
+        "variant": "Base",
+        "path": BASE / "ML/LBP/Base/lbp_logistic_regression_base_outputs/lbp_logistic_regression_base_model.joblib",
+        "feature": "LBP",
+        "report": BASE / "ML/LBP/Base/lbp_logistic_regression_base_outputs/lbp_logistic_regression_base_report.txt",
+    },
+    {
+        "name": "LBP + Logistic Regression",
+        "variant": "Opt",
+        "path": BASE / "ML/LBP/Opt/lbp_logistic_regression_opt_outputs/lbp_logistic_regression_opt_model.joblib",
+        "feature": "LBP",
+        "report": BASE / "ML/LBP/Opt/lbp_logistic_regression_opt_outputs/lbp_logistic_regression_opt_report.txt",
+    },
+    {
+        "name": "LBP + Random Forest",
+        "variant": "Base",
+        "path": BASE / "ML/LBP/Base/lbp_random_forest_base_outputs/lbp_random_forest_base_model.joblib",
+        "feature": "LBP",
+        "report": BASE / "ML/LBP/Base/lbp_random_forest_base_outputs/lbp_random_forest_base_report.txt",
+    },
+    {
+        "name": "LBP + Random Forest",
+        "variant": "Opt",
+        "path": BASE / "ML/LBP/Opt/lbp_random_forest_opt_outputs/lbp_random_forest_opt_model.joblib",
+        "feature": "LBP",
+        "report": BASE / "ML/LBP/Opt/lbp_random_forest_opt_outputs/lbp_random_forest_opt_report.txt",
     },
 ]
 
@@ -582,6 +669,9 @@ if __name__ == "__main__":
     ml_results = []
     for entry in ML_MODELS:
         tag = f"{entry['name']} [{entry['variant']}]"
+        if not entry["path"].exists():
+            print(f"  [SKIP] {tag} - model file not found: {entry['path'].name}")
+            continue
         print(f"  Profiling {tag} ...")
         r = profile_ml_model(entry)
         ml_results.append(r)
@@ -591,6 +681,9 @@ if __name__ == "__main__":
     dl_results = []
     for entry in DL_MODELS:
         tag = f"{entry['name']} [{entry['variant']}]"
+        if not entry["path"].exists():
+            print(f"  [SKIP] {tag} - model file not found: {entry['path'].name}")
+            continue
         print(f"  Profiling {tag} ...")
         r = silent_profile_dl(entry)
         dl_results.append(r)
