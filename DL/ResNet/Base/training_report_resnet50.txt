@@ -1,0 +1,221 @@
+JOURNAL-FRIENDLY TRAINING REPORT
+================================
+
+1. Experiment Information
+-------------------------
+Report generated at       : 2026-05-15 15:57:08
+Python version            : 3.13.5
+TensorFlow version        : 2.20.0
+Random seed               : 123
+
+2. Dataset Description
+----------------------
+Dataset name              : Tomato Binary Dataset
+Dataset task              : Binary image classification
+Classes                   : diseased, healthy
+Dataset directory         : BASE_DIR.parent.parent.parent / TomatoBinaryDataset
+Total images              : 6000
+Total diseased images     : 3000
+Total healthy images      : 3000
+Dataset construction      : Tomato leaf images were grouped into two target classes. Images showing disease symptoms were assigned to the 'diseased' class, while healthy tomato leaf images were assigned to the 'healthy' class.
+Class balancing strategy  : The dataset was balanced to contain an equal number of images for each class.
+
+3. Train-Validation Split
+-------------------------
+Split method              : Stratified train-validation split
+Validation ratio          : 0.2
+Training images           : 4800
+Training diseased images  : 2400
+Training healthy images   : 2400
+Validation images         : 1200
+Validation diseased images: 600
+Validation healthy images : 600
+
+4. Image Preprocessing
+----------------------
+Input image size          : 300 x 300 pixels
+Batch size                : 32
+Color format              : RGB
+Image loading method      : tf.io.read_file followed by tf.image.decode_image
+Image resizing            : tf.image.resize
+Image data type           : tf.float32
+Preprocessing method      : tf.keras.applications.resnet50.preprocess_input was applied before the image entered the ResNet50 backbone.
+Data pipeline             : tf.data.Dataset with shuffle, map, batch, and prefetch
+Shuffle buffer size       : Number of training images
+Prefetch setting          : tf.data.AUTOTUNE
+
+5. Data Augmentation
+--------------------
+Augmentation applied      : Yes
+Augmentation stage        : Training pipeline only
+Augmentation techniques   :
+- Random horizontal flip
+- Random rotation with factor 0.05
+- Random zoom with factor 0.05
+- Random contrast with factor 0.05
+
+6. Model Architecture
+---------------------
+Base model                : ResNet50
+Pretrained weights        : ImageNet
+Input shape               : 300 x 300 pixels x 3 RGB
+Include top               : False
+Fine-tuning               : Disabled
+Backbone status           : Frozen
+Feature extraction layer  : GlobalAveragePooling2D
+Classifier head           : Dense(128, ReLU) -> Dropout(0.5) -> Dense(64, ReLU) -> Dropout(0.4) -> Dense(1, Sigmoid)
+Output activation         : Sigmoid
+Classification type       : Binary classification
+Class mapping             : 0 = diseased, 1 = healthy
+Decision threshold        : 0.5
+Total parameters          : 23858305
+Trainable parameters      : 270593
+Non-trainable parameters  : 23587712
+
+6A. Model Flow Diagram
+----------------------
+The proposed ResNet50-based binary classification model follows the architecture flow below:
+
++-----------------------------+
+| Input Image                 |
+| 300 x 300 pixels RGB        |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Data Augmentation           |
+| - Random horizontal flip    |
+| - Random rotation = 0.05    |
+| - Random zoom = 0.05        |
+| - Random contrast = 0.05    |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| ResNet50 Preprocessing      |
+| resnet50.preprocess_input   |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| ResNet50 Backbone           |
+| Pretrained on ImageNet      |
+| include_top = False         |
+| trainable = False           |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| GlobalAveragePooling2D      |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Dense Layer                 |
+| 128 neurons, ReLU           |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Dropout                     |
+| rate = 0.5                  |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Dense Layer                 |
+| 64 neurons, ReLU            |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Dropout                     |
+| rate = 0.4                  |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Output Layer                |
+| Dense(1), Sigmoid           |
++-------------+---------------+
+              |
+              v
++-----------------------------+
+| Prediction Output           |
+| 0 = Diseased                |
+| 1 = Healthy                 |
+| threshold = 0.5             |
++-----------------------------+
+
+Model flow summary:
+Input tomato leaf images were resized to 300 x 300 pixels and augmented during training. The augmented images were preprocessed using the ResNet50 preprocessing function and passed into a frozen ResNet50 backbone pretrained on ImageNet. The extracted feature maps were summarized using global average pooling and classified using a lightweight fully connected classifier consisting of Dense, Dropout, and Sigmoid layers. Fine-tuning was intentionally disabled, so only the classifier head was optimized during training.
+
+7. Training Configuration
+-------------------------
+Loss function             : Binary Crossentropy
+Label smoothing           : 0.2
+Optimizer                 : SGD
+Learning rate             : 0.001
+Momentum                  : 0.8
+Epochs                    : 15
+Fine-tuning phase         : Not used
+Trainable component       : Classifier head only
+Callback - checkpoint     : ModelCheckpoint, monitor=val_accuracy, save_best_only=True, mode=max
+Callback - early stopping : EarlyStopping, monitor=val_accuracy, patience=5, restore_best_weights=True
+Callback - LR scheduler   : ReduceLROnPlateau, monitor=val_loss, factor=0.2, patience=3, min_lr=1e-6
+
+8. Evaluation Metrics
+---------------------
+Metrics used              : Accuracy, Precision, Recall, AUC, F1-score
+Decision threshold        : 0.5
+Evaluation set            : Validation set
+Evaluation method         : Prediction probabilities were converted to binary labels using threshold 0.5, then compared against the true validation labels.
+
+9. Final Classification Report
+------------------------------
+precision    recall  f1-score   support
+
+    diseased       0.99      0.86      0.92       600
+     healthy       0.87      0.99      0.93       600
+
+    accuracy                           0.92      1200
+   macro avg       0.93      0.92      0.92      1200
+weighted avg       0.93      0.92      0.92      1200
+
+10. Confusion Matrix
+--------------------
+Class order               : diseased, healthy
+Matrix format             : rows=true labels, columns=predicted labels
+
+[[515  85]
+ [  6 594]]
+
+True Diseased predicted Diseased : 515
+True Diseased predicted Healthy  : 85
+True Healthy predicted Diseased  : 6
+True Healthy predicted Healthy   : 594
+
+11. Final Training Summary
+--------------------------
+Final training accuracy   : 0.9190
+Final training loss       : 0.4489
+Final validation accuracy : 0.9242
+Best validation accuracy  : 0.9242
+
+12. Saved Outputs
+-----------------
+Best model path           : best_model_binary_resnet50.keras
+Final model path          : resnet50_binary_final.keras
+Training curve image      : training_curve_resnet50.png
+Confusion matrix image    : confusion_matrix_resnet50.png
+Text report path          : training_report_resnet50.txt
+
+13. Suggested Journal Method Description
+----------------------------------------
+This study performed binary classification of tomato leaf images into diseased and healthy classes. The dataset consisted of 6000 images, with 3000 diseased images and 3000 healthy images. A stratified train-validation split was applied with an 80:20 ratio, resulting in 4800 training images and 1200 validation images. The validation set contained 600 diseased and 600 healthy images. Images were resized to 300 x 300 pixels, decoded in RGB format, converted to tf.float32, and processed using a TensorFlow data pipeline with shuffling, batching, and prefetching.
+
+Data augmentation was applied only to the training pipeline using random horizontal flipping, random rotation, random zoom, and random contrast adjustment. The model used ResNet50 pretrained on ImageNet as a frozen feature extractor with include_top=False. The extracted feature maps were reduced using GlobalAveragePooling2D and classified using a lightweight classifier head consisting of Dense(128, ReLU), Dropout(0.5), Dense(64, ReLU), Dropout(0.4), and Dense(1, Sigmoid). Fine-tuning was disabled so that the pretrained backbone remained frozen during training. The model was optimized using SGD with a learning rate of 0.001 and momentum of 0.8. Binary cross-entropy with label smoothing of 0.2 was used as the loss function. Model performance was evaluated using accuracy, precision, recall, F1-score, AUC, and confusion matrix analysis.
+
+14. Important Methodological Note
+---------------------------------
+The current ResNet50 experiment intentionally disabled fine-tuning and froze the backbone. This design makes the model less aggressive than a fully fine-tuned transfer learning configuration. The reported performance therefore represents the capability of ResNet50 as a fixed feature extractor combined with a lightweight classifier head. If higher accuracy is required, a second training phase can be added by unfreezing selected upper layers of the ResNet50 backbone and training them with a smaller learning rate.

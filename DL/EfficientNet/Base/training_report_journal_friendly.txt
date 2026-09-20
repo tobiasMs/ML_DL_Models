@@ -1,0 +1,134 @@
+JOURNAL-FRIENDLY TRAINING REPORT
+================================
+
+1. Experiment Information
+-------------------------
+Report generated at       : 2026-05-18 15:49:58
+Python version            : 3.13.5
+TensorFlow version        : 2.20.0
+Random seed               : 123
+
+2. Dataset Description
+----------------------
+Dataset name              : Tomato Binary Dataset
+Dataset task              : Binary image classification
+Classes                   : diseased, healthy
+Dataset directory         : E:\ML_DL_Models\TomatoBinaryDataset
+Total images              : 6000
+Total diseased images     : 3000
+Total healthy images      : 3000
+
+3. Train-Validation Split
+-------------------------
+Split method              : Stratified train-validation split
+Validation ratio          : 0.2
+Training images           : 4800
+Validation images         : 1200
+Validation diseased images: 600
+Validation healthy images : 600
+
+4. Image Preprocessing
+----------------------
+Input image size          : 300 x 300 pixels
+Color mode                : RGB
+Preprocessing             : tf.keras.applications.efficientnet.preprocess_input
+
+5. Data Augmentation
+--------------------
+Augmentation applied      : Yes
+Augmentation techniques   :
+- Random horizontal flip
+- Random rotation
+- Random zoom
+- Random contrast
+
+6. Model Architecture
+---------------------
+Base model                : EfficientNetB0
+Pretrained weights        : ImageNet
+Classifier head           : Dense(128, ReLU) -> Dropout(0.5) -> Dense(64, ReLU) -> Dropout(0.4) -> Dense(1, Sigmoid)
+Backbone status           : Frozen
+Fine-tuning (disabled)               : Disabled
+Total parameters          : 4221860
+Trainable parameters      : 172289
+Non-trainable parameters  : 4049571
+
+6A. Model Flow Diagram
+----------------------
+
+Input Image
+    ↓
+Data Augmentation
+    ↓
+EfficientNetB0 Backbone (Frozen)
+    ↓
+GlobalAveragePooling2D
+    ↓
+Dense(128, ReLU)
+    ↓
+Dropout(0.5)
+    ↓
+Dense(64, ReLU)
+    ↓
+Dropout(0.4)
+    ↓
+Dense(1, Sigmoid)
+    ↓
+Binary Prediction
+
+7. Training Configuration
+-------------------------
+Optimizer                 : SGD
+Loss function             : BinaryCrossentropy
+Label smoothing           : 0.20
+Batch size                : 32
+Epochs                    : 15
+Fine-tuning stage         : Not used
+
+8. Evaluation Metrics
+---------------------
+Metrics used              : Accuracy, Precision, Recall, AUC, F1-score
+
+9. Final Classification Report
+------------------------------
+              precision    recall  f1-score   support
+
+    diseased       0.97      0.77      0.86       600
+     healthy       0.81      0.98      0.88       600
+
+    accuracy                           0.87      1200
+   macro avg       0.89      0.87      0.87      1200
+weighted avg       0.89      0.87      0.87      1200
+
+
+10. Confusion Matrix
+--------------------
+[[460 140]
+ [ 14 586]]
+
+True Diseased predicted Diseased : 460
+True Diseased predicted Healthy  : 140
+True Healthy predicted Diseased  : 14
+True Healthy predicted Healthy   : 586
+
+11. Final Training Summary
+--------------------------
+Final training accuracy   : 0.8773
+Final training loss       : 0.4858
+Final validation accuracy : 0.8717
+Best validation accuracy  : 0.8717
+
+12. Saved Outputs
+-----------------
+Best model path           : E:\ML_DL_Models\DL\EfficientNet\Base\best_model_binary_efficientnetb0.keras
+Final model path          : E:\ML_DL_Models\DL\EfficientNet\Base\efficientnetb0_binary_final.keras
+Training curve image      : E:\ML_DL_Models\DL\EfficientNet\Base\training_curve.png
+Confusion matrix image    : E:\ML_DL_Models\DL\EfficientNet\Base\confusion_matrix.png
+Text report path          : E:\ML_DL_Models\DL\EfficientNet\Base\training_report_journal_friendly.txt
+
+13. Methodological Note
+----------------------
+The EfficientNetB0 backbone was intentionally frozen during training.
+Only the classifier head was trained. This approach reduces overfitting,
+decreases training complexity, and is suitable for lightweight IoT or
+edge-device deployment scenarios.

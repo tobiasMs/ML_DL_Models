@@ -19,6 +19,8 @@ from skimage.feature import hog
 BASE = Path(__file__).resolve().parent
 ML_MODEL_PATH = BASE / "ML/HOG/Base/hog_svm_base_outputs/hog_svm_base_model.joblib"
 DL_MODEL_PATH = BASE / "DL/MobileNetV3/Opt/mobilenet_v3_binary_final.keras"
+if not DL_MODEL_PATH.exists() and (BASE / "DL/MobileNetV3/Base/mobilenet_v3_binary_final.keras").exists():
+    DL_MODEL_PATH = BASE / "DL/MobileNetV3/Base/mobilenet_v3_binary_final.keras"
 OUTPUT_PATH   = BASE / "model_profiling_report.txt"
 
 IMAGE_SIZE    = (300, 300)
@@ -34,12 +36,14 @@ def file_size_mb(path: Path) -> float:
 def extract_hog(img_bgr: np.ndarray) -> np.ndarray:
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     img_resized = cv2.resize(img_rgb, IMAGE_SIZE)
+    gray = cv2.cvtColor(img_resized, cv2.COLOR_RGB2GRAY)
     feat = hog(
-        img_resized,
+        gray,
         orientations=9,
         pixels_per_cell=(16, 16),
         cells_per_block=(2, 2),
-        channel_axis=-1,
+        block_norm="L2-Hys",
+        feature_vector=True,
     )
     return feat
 
@@ -52,16 +56,23 @@ def dummy_image_bgr() -> np.ndarray:
 
 def profile_ml():
     print("  Loading HOG + SVM model ...")
+    if not ML_MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"Model ML tidak ditemukan di {ML_MODEL_PATH}.\n"
+            "Pastikan telah menjalankan training hog_svm_base.py untuk menghasilkan model .joblib terlebih dahulu."
+        )
+
     pipeline = joblib.load(ML_MODEL_PATH)
 
     svm = pipeline.named_steps["classifier"]
     scaler = pipeline.named_steps["scaler"]
 
     # ── params ───────────────────────────────────────────────────────────────
-    n_sv          = svm.n_support_.sum()           # total support vectors
-    n_features    = svm.shape_fit_[1]              # HOG feature dim after scaler
+    n_sv          = int(svm.n_support_.sum())      # total support vectors
+    n_features    = int(svm.shape_fit_[1])         # HOG feature dim after scaler
     n_classes     = len(svm.classes_)
-    svm_params    = n_sv * n_features              # SV matrix elements
+    sv_weights_params = svm.dual_coef_.size + svm.intercept_.size
+    svm_params    = (n_sv * n_features) + sv_weights_params  # SV matrix + dual_coef + intercept
     scaler_params = n_features * 2                 # mean + var per feature
     total_params  = svm_params + scaler_params
 
@@ -70,12 +81,14 @@ def profile_ml():
     # Weighted sum over SVs: n_sv mul + n_sv add
     # HOG extraction (approx per pixel block):
     #   pixels_per_cell=16x16, cells_per_block=2x2, orientations=9
+    #   RGB to Gray: ~3 ops per pixel
     #   gradient magnitude+angle per pixel: ~6 ops
     #   binning per pixel: ~9 ops
     #   normalization per block: ~(4*9)*2 ops
     h, w = IMAGE_SIZE
     pixels = h * w
-    hog_flops = pixels * (6 + 9) + (h // 16 - 1) * (w // 16 - 1) * (4 * 9 * 2)
+    gray_flops   = pixels * 3
+    hog_flops    = gray_flops + pixels * (6 + 9) + (h // 16 - 1) * (w // 16 - 1) * (4 * 9 * 2)
     scaler_flops = n_features * 2                                   # (x-mean)/std
     kernel_flops = n_sv * (3 * n_features + 2)                      # per sample
     total_flops  = hog_flops + scaler_flops + kernel_flops
@@ -85,23 +98,24 @@ def profile_ml():
 
     # ── latency ──────────────────────────────────────────────────────────────
     dummy = dummy_image_bgr()
-    feat  = extract_hog(dummy).reshape(1, -1)
-    # warmup
+    # warmup full pipeline
     for _ in range(5):
-        pipeline.predict(feat)
+        f = extract_hog(dummy).reshape(1, -1)
+        pipeline.predict(f)
+
     times = []
     for _ in range(LATENCY_RUNS):
         t0 = time.perf_counter()
-        feat_fresh = extract_hog(dummy_image_bgr()).reshape(1, -1)
+        feat_fresh = extract_hog(dummy).reshape(1, -1)
         pipeline.predict(feat_fresh)
         times.append(time.perf_counter() - t0)
     latency_ms = np.mean(times) * 1000
     latency_std_ms = np.std(times) * 1000
 
     return {
-        "n_support_vectors": int(n_sv),
-        "n_features": int(n_features),
-        "n_classes": int(n_classes),
+        "n_support_vectors": n_sv,
+        "n_features": n_features,
+        "n_classes": n_classes,
         "total_params": int(total_params),
         "total_flops": int(total_flops),
         "size_mb": size_mb,
